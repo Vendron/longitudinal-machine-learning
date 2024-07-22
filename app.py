@@ -203,7 +203,7 @@ output_size = 1
 epochs = 1000
 learning_rate = 0.01
 
-mlp = SimpleMLP(input_size, hidden_size, output_size)
+mlp = MLP(input_size, hidden_size, output_size)
 mlp.train(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
 
 # Predict and evaluate
