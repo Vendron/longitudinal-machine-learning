@@ -14,11 +14,11 @@ load_dotenv()
 DATASET_PATH: str = os.getenv("DATASET_PATH")
 TARGET_WAVE: str = os.getenv("TARGET_WAVE")
 
-datset: LongitudinalDataset = LongitudinalDataset(DATASET_PATH)
-datset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42)
-datset.setup_features_group("elsa")
+dataset: LongitudinalDataset = LongitudinalDataset(DATASET_PATH)
+dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42)
+dataset.setup_features_group("elsa")
 
-X_train, X_test, y_train, y_test = datset.X_train, datset.X_test, datset.y_train, datset.y_test
+X_train, X_test, y_train, y_test = dataset.X_train, dataset.X_test, dataset.y_train, dataset.y_test
 
 def preprocess_data(X: np.ndarray) -> pd.DataFrame:
     """
@@ -34,14 +34,15 @@ def preprocess_data(X: np.ndarray) -> pd.DataFrame:
 
     # Replace '?' with NaN
     X_df.replace('?', np.nan, inplace=True)
-    X_df: pd.DataFrame = X_df.apply(pd.to_numeric, errors='coerce') 
-    
+    # Set to 0
+    X_df.fillna(0, inplace=True)
+
     return X_df.values
 
 X_train: np.ndarray = preprocess_data(X_train)
 X_test: np.ndarray = preprocess_data(X_test)
 
-# Normalise data
+# Normalize data
 scaler: MinMaxScaler = MinMaxScaler()
 X_train: np.ndarray = scaler.fit_transform(X_train)
 X_test: np.ndarray = scaler.transform(X_test)
@@ -53,7 +54,7 @@ class MLP:
 
     Here I want to test a simple MLP model on longitudinal data. 
     The model uses feedforward, with a single hidden layer, using a sigmoid activation function. The model is trained using backpropagation.
-    - The number of nueral units in the input layer is equal to the number of features in the dataset. 
+    - The number of neural units in the input layer is equal to the number of features in the dataset. 
     - The number of units in the hidden layer is a hyperparameter.
     - The number of units in the output layer is 1, as this is a binary classification problem. (Either patient is or is not diagnosed.)
 
@@ -84,16 +85,16 @@ class MLP:
         return 1 / (1 + np.exp(-z))
     
     def sigmoid_derivative(self: object, z: float or np.ndarray) -> float or np.ndarray: # type: ignore
-            """Calculate derivative of sigmoid function
+        """Calculate derivative of sigmoid function
 
-            Args:
-                self (object): The object instance.
-                z (float or np.ndarray): The input value(s) to the sigmoid function
+        Args:
+            self (object): The object instance.
+            z (float or np.ndarray): The input value(s) to the sigmoid function
 
-            Returns:
-                float or np.ndarray: Derivative of the sigmoid function
-            """
-            return z * (1 - z)
+        Returns:
+            float or np.ndarray: Derivative of the sigmoid function
+        """
+        return z * (1 - z)
     
     def dropout(self: object, layer_output: np.ndarray) -> np.ndarray:
         """Apply dropout regularization to the layer output.
@@ -141,6 +142,7 @@ class MLP:
             float: The computed loss.
         """
         m: int = y_true.shape[0]
+        y_pred = np.clip(y_pred, 1e-10, 1 - 1e-10) # Avoid division by zero and log(0)
         loss: float = -(1/m) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
     
@@ -185,21 +187,21 @@ class MLP:
         return loss
         
     def train(self: object, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float) -> None:
-            """Train the model using the given data.
+        """Train the model using the given data.
 
-            Args:
-                self (object): The object instance.
-                X (np.ndarray): The input data.
-                y (np.ndarray): The target data.
-                epochs (int): The number of training epochs.
-                learning_rate (float): The learning rate for the optimizer.
-            """
-            for epoch in range(epochs):
-                y_pred: np.ndarray = self.forward(X, training=True)
-                loss: float = self.calc_loss(y_pred, y) 
-                self.backward(X, y, y_pred, learning_rate)
-                if epoch % 100 == 0:
-                    print(f'Epoch {epoch}, Loss: {loss}')
+        Args:
+            self (object): The object instance.
+            X (np.ndarray): The input data.
+            y (np.ndarray): The target data.
+            epochs (int): The number of training epochs.
+            learning_rate (float): The learning rate for the optimizer.
+        """
+        for epoch in range(epochs):
+            y_pred: np.ndarray = self.forward(X, training=True)
+            loss: float = self.calc_loss(y_pred, y) 
+            self.backward(X, y, y_pred, learning_rate)
+            if epoch % 100 == 0:
+                print(f'Epoch {epoch}, Loss: {loss}')
                 
     def predict(self: object, X: np.ndarray) -> np.ndarray:
         """
