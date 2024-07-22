@@ -3,9 +3,15 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
+import os
+from dotenv import load_dotenv
 
-DATASET_PATH = "./data/target_dataset.csv" # Path to the dataset
-TARGET_WAVE = "class_target_w8" # Target Feature class
+# Load environment variables from .env file
+load_dotenv()
+
+# Get variables from environment
+DATASET_PATH = os.getenv("DATASET_PATH")
+TARGET_WAVE = os.getenv("TARGET_WAVE")
 
 # Sample data
 data: pd.DataFrame = pd.read_csv(DATASET_PATH)
