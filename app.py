@@ -224,11 +224,11 @@ learning_rate: float = 0.01
 dropout_rate: float = 0.5
 
 mlp: object = MLP(input_size, hidden_size, output_size, dropout_rate)
-mlp.train(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
+mlp.train(X_train, y_train.values.reshape(-1, 1), epochs, learning_rate)
 
 # Predict and evaluate
 y_pred: np.ndarray = mlp.predict(X_test)
-accuracy: float = np.mean(y_pred == y_test.reshape(-1, 1))
+accuracy: float = np.mean(y_pred == y_test.values.reshape(-1, 1))
 print(f'Accuracy: {accuracy}')
 
 # Calculate additional metrics
