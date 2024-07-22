@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
+from scikit_longitudinal.data_preparation import LongitudinalDataset
 import os
 from dotenv import load_dotenv
 
@@ -10,55 +11,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get variables from environment
-DATASET_PATH = os.getenv("DATASET_PATH")
-TARGET_WAVE = os.getenv("TARGET_WAVE")
+DATASET_PATH: str = os.getenv("DATASET_PATH")
+TARGET_WAVE: str = os.getenv("TARGET_WAVE")
 
-# Sample data
-data: pd.DataFrame = pd.read_csv(DATASET_PATH)
-features: List[str] = data.columns.tolist() 
+datset: LongitudinalDataset = LongitudinalDataset(DATASET_PATH)
+datset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42)
+datset.setup_features_group("elsa")
 
-# Split features into waves
-waves: dict = {}
-for feature in features:
-    if feature.startswith('class_'):
-        wave: str = feature.split('_')[-1]
-    else:
-        wave: str = feature.split('_')[-1][-2:]
-    if wave not in waves:
-        waves[wave]: List[str] = [] # type: ignore
-    waves[wave].append(feature)
+X_train, X_test, y_train, y_test = datset.X_train, datset.X_test, datset.y_train, datset.y_test
 
-# Preprocess data, if not a float or int, replace with 0
-for wave, features in waves.items():
-    for feature in features:
-        data[feature] = pd.to_numeric(data[feature], errors='coerce')
-        data[feature] = data[feature].fillna(0)
+def preprocess_data(X: np.ndarray) -> pd.DataFrame:
+    """
+    Preprocesses the input data array by replacing '?' with NaN.
 
-# Filter waves dynamically
-target_wave = TARGET_WAVE.split('_')[-1]
-waves_to_exclude = [wave for wave in waves if wave != target_wave]
+    Args:
+        X (np.ndarray): The input data array.
 
-# Create a copy of the dataset
-filtered_data = data.copy()
-for wave in waves_to_exclude:
-    class_vars = [feat for feat in waves[wave] if feat.startswith('class_')]
-    filtered_data = filtered_data.drop(columns=class_vars, errors='ignore')
+    Returns:
+        pd.DataFrame: The preprocessed data as a DataFrame.
+    """
+    X_df: pd.DataFrame = pd.DataFrame(X)
 
-# Prepare the dataset for training
-print(filtered_data.columns)
+    # Replace '?' with NaN
+    X_df.replace('?', np.nan, inplace=True)
+    X_df: pd.DataFrame = X_df.apply(pd.to_numeric, errors='coerce') 
+    
+    return X_df.values
 
-X = filtered_data.drop(columns=[TARGET_WAVE]).values
-y = filtered_data[TARGET_WAVE].values
-
-print(X.shape, y.shape)
-
-
-# Split dataset - training, testing. Validation not implemented
-train_size: int = int(0.8 * X.shape[0])
-X_train: np.ndarray = X[:train_size]
-X_test: np.ndarray = X[train_size:]
-y_train: np.ndarray = y[:train_size]
-y_test: np.ndarray = y[train_size:]
+X_train: np.ndarray = preprocess_data(X_train)
+X_test: np.ndarray = preprocess_data(X_test)
 
 # Normalise data
 scaler: MinMaxScaler = MinMaxScaler()
@@ -66,19 +47,19 @@ X_train: np.ndarray = scaler.fit_transform(X_train)
 X_test: np.ndarray = scaler.transform(X_test)
 
 # MLP implementation
-"""_summary_
-# Longitudinal Multi-layer Perceptron
-
-Here I want to test a simple MLP model on longitudinal data. 
-The model uses feedforward, with a single hidden layer, using a sigmoid activation function. The model is trained using backpropagation.
-- The number of nueral units in the input layer is equal to the number of features in the dataset. 
-- The number of units in the hidden layer is a hyperparameter.
-- The number of units in the output layer is 1, as this is a binary classification problem. (Either patient is or is not diagnosed.)
-
-Returns:
-    _type_: MLP
-"""
 class MLP:
+    """_summary_
+    # Longitudinal Multi-layer Perceptron
+
+    Here I want to test a simple MLP model on longitudinal data. 
+    The model uses feedforward, with a single hidden layer, using a sigmoid activation function. The model is trained using backpropagation.
+    - The number of nueral units in the input layer is equal to the number of features in the dataset. 
+    - The number of units in the hidden layer is a hyperparameter.
+    - The number of units in the output layer is 1, as this is a binary classification problem. (Either patient is or is not diagnosed.)
+
+    Returns:
+        _type_: MLP
+    """
     def __init__(self: object, input_size: int, hidden_size: int, output_size: int, dropout_rate: int) -> None:
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -127,7 +108,7 @@ class MLP:
         mask: np.ndarray = (np.random.rand(*layer_output.shape) < self.dropout_rate) / self.dropout_rate 
         return layer_output * mask
     
-    def forward(self: object, X: np.ndarray) -> np.ndarray:
+    def forward(self: object, X: np.ndarray, training: bool = False) -> np.ndarray:
         """Calculates the forward pass of the neural network.
 
         Args:
@@ -138,8 +119,11 @@ class MLP:
             np.ndarray: The output of the neural network.
         """
         self.z1: np.ndarray = np.dot(X, self.W1) + self.b1
-        self.a1: np.ndarray = self.sigmoid(self.z1) 
+        self.a1: np.ndarray = self.sigmoid(self.z1)
         
+        if training:
+            self.a1: np.ndarray = self.dropout(self.a1)
+            
         self.z2: np.ndarray = np.dot(self.a1, self.W2) + self.b2
         self.a2: np.ndarray = self.sigmoid(self.z2)
         
@@ -173,6 +157,8 @@ class MLP:
         """
         m: int = y.shape[0]
         
+        y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10) # Avoid division by zero
+        
         # Compute gradients
         d_loss_a2: np.ndarray = -(y / y_pred) + ((1 - y) / (1 - y_pred))
         d_loss_z2: np.ndarray = d_loss_a2 * self.sigmoid_derivative(y_pred)
@@ -191,6 +177,12 @@ class MLP:
         self.b1 -= learning_rate * d_loss_b1
         self.W2 -= learning_rate * d_loss_W2
         self.b2 -= learning_rate * d_loss_b2
+    
+    def calc_loss(self: object, y_pred: np.ndarray, y_true: np.ndarray) -> float:
+        m: int = y_true.shape[0]
+        y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10) # Avoid division by zero
+        loss: float = -(1/m) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+        return loss
         
     def train(self: object, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float) -> None:
             """Train the model using the given data.
@@ -203,8 +195,8 @@ class MLP:
                 learning_rate (float): The learning rate for the optimizer.
             """
             for epoch in range(epochs):
-                y_pred: np.ndarray = self.forward(X)
-                loss: float = self.compute_loss(y_pred, y) 
+                y_pred: np.ndarray = self.forward(X, training=True)
+                loss: float = self.calc_loss(y_pred, y) 
                 self.backward(X, y, y_pred, learning_rate)
                 if epoch % 100 == 0:
                     print(f'Epoch {epoch}, Loss: {loss}')
@@ -220,18 +212,18 @@ class MLP:
         Returns:
             np.ndarray: The predicted output.
         """
-        y_pred: np.ndarray = self.forward(X)
+        y_pred: np.ndarray = self.forward(X, training=False)
         return np.round(y_pred)
     
 # Model Parameters
 input_size: int = X_train.shape[1]
-hidden_size: int = 128
+hidden_size: int = 64
 output_size: int = 1
 epochs: int = 1000
 learning_rate: float = 0.01
-dropout_rate: float = 0.2
+dropout_rate: float = 0.5
 
-mlp: object = MLP(input_size, hidden_size, output_size)
+mlp: object = MLP(input_size, hidden_size, output_size, dropout_rate)
 mlp.train(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
 
 # Predict and evaluate
