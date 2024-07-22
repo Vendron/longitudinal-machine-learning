@@ -1,0 +1,12 @@
+services:
+  sklong-app:
+    image: python:3.9-19
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: python app.py
+    ports:
+      - "8000:80"
+    build:
+        context: .
+        dockerfile: Dockerfile
