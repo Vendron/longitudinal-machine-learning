@@ -2,6 +2,7 @@ from typing import List
 import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
+from sklearn.preprocessing import MinMaxScaler
 
 DATASET_PATH = "./data/target_dataset.csv" # Path to the dataset
 TARGET_WAVE = "class_target_w8" # Target Feature class
@@ -26,10 +27,14 @@ for wave, features in waves.items():
     for feature in features:
         data[feature] = pd.to_numeric(data[feature], errors='coerce')
         data[feature] = data[feature].fillna(0)
-        
-# Create a copy of the dataset and remove class variables for waves 3-7
+
+# Filter waves dynamically
+target_wave = TARGET_WAVE.split('_')[-1]
+waves_to_exclude = [wave for wave in waves if wave != target_wave]
+
+# Create a copy of the dataset
 filtered_data = data.copy()
-for wave in ['w3', 'w4', 'w5', 'w6', 'w7']:
+for wave in waves_to_exclude:
     class_vars = [feat for feat in waves[wave] if feat.startswith('class_')]
     filtered_data = filtered_data.drop(columns=class_vars, errors='ignore')
 
@@ -41,16 +46,18 @@ y = filtered_data[TARGET_WAVE].values
 
 print(X.shape, y.shape)
 
-# Split dataset - training, testing. Validation not imlpemented
-train_size = int(0.8 * X.shape[0])
-X_train, X_test = X[:train_size], X[train_size:]
-y_train, y_test = y[:train_size], y[train_size:]
 
-# Standardize the data
-X_mean = X_train.mean(axis=0)
-X_std = X_train.std(axis=0)
-X_train = (X_train - X_mean) / X_std
-X_test = (X_test - X_mean) / X_std
+# Split dataset - training, testing. Validation not implemented
+train_size: int = int(0.8 * X.shape[0])
+X_train: np.ndarray = X[:train_size]
+X_test: np.ndarray = X[train_size:]
+y_train: np.ndarray = y[:train_size]
+y_test: np.ndarray = y[train_size:]
+
+# Normalise data
+scaler: MinMaxScaler = MinMaxScaler()
+X_train: np.ndarray = scaler.fit_transform(X_train)
+X_test: np.ndarray = scaler.transform(X_test)
 
 # MLP implementation
 """_summary_
@@ -211,27 +218,27 @@ class MLP:
         return np.round(y_pred)
     
 # Model Parameters
-input_size = X_train.shape[1]
-hidden_size = 128
-output_size = 1
-epochs = 1000
-learning_rate = 0.01
-dropout_rate = 0.2
+input_size: int = X_train.shape[1]
+hidden_size: int = 128
+output_size: int = 1
+epochs: int = 1000
+learning_rate: float = 0.01
+dropout_rate: float = 0.2
 
-mlp = MLP(input_size, hidden_size, output_size)
+mlp: object = MLP(input_size, hidden_size, output_size)
 mlp.train(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
 
 # Predict and evaluate
-y_pred = mlp.predict(X_test)
-accuracy = np.mean(y_pred == y_test.reshape(-1, 1))
+y_pred: np.ndarray = mlp.predict(X_test)
+accuracy: float = np.mean(y_pred == y_test.reshape(-1, 1))
 print(f'Accuracy: {accuracy}')
 
 # Calculate additional metrics
-precision = precision_score(y_test, y_pred)
-recall = recall_score(y_test, y_pred)
-f1 = f1_score(y_test, y_pred)
-conf_matrix = confusion_matrix(y_test, y_pred)
-roc_auc = roc_auc_score(y_test, y_pred)
+precision: float = precision_score(y_test, y_pred)
+recall: float = recall_score(y_test, y_pred)
+f1: float = f1_score(y_test, y_pred)
+conf_matrix: np.ndarray = confusion_matrix(y_test, y_pred)
+roc_auc: float = roc_auc_score(y_test, y_pred)
 
 print(f'Accuracy: {accuracy}')
 print(f'Precision: {precision}')
