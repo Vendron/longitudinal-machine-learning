@@ -66,10 +66,11 @@ Returns:
     _type_: MLP
 """
 class MLP:
-    def __init__(self: object, input_size: int, hidden_size: int, output_size: int) -> None:
+    def __init__(self: object, input_size: int, hidden_size: int, output_size: int, dropout_rate: int) -> None:
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
+        self.dropout_rate = dropout_rate
         
         # Initialize weights
         self.W1 = np.random.randn(input_size, hidden_size) #W1 is the weight matrix between the input layer and the hidden layer
@@ -99,6 +100,19 @@ class MLP:
                 float or np.ndarray: Derivative of the sigmoid function
             """
             return z * (1 - z)
+    
+    def dropout(self: object, layer_output: np.ndarray) -> np.ndarray:
+        """Apply dropout regularization to the layer output.
+
+        Args:
+            self (object): The instance of the class.
+            layer_output (np.ndarray): The output of the layer.
+
+        Returns:
+            np.ndarray: The layer output after applying dropout regularization.
+        """
+        mask: np.ndarray = (np.random.rand(*layer_output.shape) < self.dropout_rate) / self.dropout_rate 
+        return layer_output * mask
     
     def forward(self: object, X: np.ndarray) -> np.ndarray:
         """Calculates the forward pass of the neural network.
@@ -202,6 +216,7 @@ hidden_size = 128
 output_size = 1
 epochs = 1000
 learning_rate = 0.01
+dropout_rate = 0.2
 
 mlp = MLP(input_size, hidden_size, output_size)
 mlp.train(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
