@@ -218,7 +218,7 @@ class MLP(BaseMLP):
         loss = -(1/m) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
     
-    def backward(self, X: np.ndarray, y: np.ndarray, y_pred: np.ndarray, learning_rate: float) -> None:
+    def backward(self, X: np.ndarray, y: np.ndarray, y_pred: np.ndarray) -> None:
         """
         Update the weights and biases of the neural network using backpropagation.
 
@@ -226,7 +226,6 @@ class MLP(BaseMLP):
             X (np.ndarray): The input data.
             y (np.ndarray): The target labels.
             y_pred (np.ndarray): The predicted labels.
-            learning_rate (float): The learning rate for updating the weights and biases.
         """
         m: int = y.shape[0]
         
@@ -253,11 +252,11 @@ class MLP(BaseMLP):
         
         # Update the weights and biases
         for idx in range(len(self.weights)):
-            self.weights[idx] -= learning_rate * d_loss_weights[idx]
-            self.biases[idx] -= learning_rate * d_loss_biases[idx]
+            self.weights[idx] -= self.learning_rate * d_loss_weights[idx]
+            self.biases[idx] -= self.learning_rate * d_loss_biases[idx]
         
-        self.W2 -= learning_rate * d_loss_W2
-        self.b2 -= learning_rate * d_loss_b2
+        self.W2 -= self.learning_rate * d_loss_W2
+        self.b2 -= self.learning_rate * d_loss_b2
         
     def calc_loss(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
         """
@@ -277,7 +276,7 @@ class MLP(BaseMLP):
         
     @ensure_valid_state
     @override
-    def _fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float) -> "MLP":
+    def _fit(self, X: np.ndarray, y: np.ndarray) -> "MLP":
         """
         Fits the MLP model to the given training data.
 
@@ -289,10 +288,10 @@ class MLP(BaseMLP):
             MLP: The fitted MLP model.
         """
         self._mlp: MLP = self
-        for epoch in range(epochs):
+        for epoch in range(self.epochs):
             y_pred: np.ndarray = self.forward(X, training=True)
             loss: float = self.compute_loss(y_pred, y)
-            self.backward(X, y, y_pred, learning_rate)
+            self.backward(X, y, y_pred)
             if epoch % 100 == 0:
                 print(f'Epoch {epoch}, Loss: {loss}')
         return self

@@ -27,6 +27,7 @@ print(f"TARGET_WAVE: '{TARGET_WAVE}'")
 # Validate dataset path
 if not os.path.exists(DATASET_PATH):
     raise FileNotFoundError(f"Dataset not found at {DATASET_PATH}")
+
 # Load and prepare the dataset
 dataset = LongitudinalDataset(DATASET_PATH)
 dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42)
@@ -69,11 +70,11 @@ output_size = 1
 epochs = 1000
 learning_rate = 0.01
 dropout_rate = 0.5
-features_group = dataset.feature_groups()
+features_group = dataset.get_feature_groups()
 
 # Initialize and train the model
 mlp = MLP(hidden_size, output_size, dropout_rate, features_group, epochs, learning_rate)
-mlp.fit(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
+mlp.fit(X_train, y_train.reshape(-1, 1))
 
 # Predict and evaluate
 y_pred = mlp.predict(X_test)
