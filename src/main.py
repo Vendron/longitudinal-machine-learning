@@ -1,19 +1,32 @@
+from dotenv import load_dotenv, find_dotenv
 import os
-from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
-from preprocessing import LongitudinalDataset
-from models.mlp import build_skorch_model
+from data_preparation.preprocessing import LongitudinalDataset
+from models.mlp import MLP
+
+# Clear any cached environment variables
+os.environ.pop("DATASET_PATH", None)
+os.environ.pop("TARGET_WAVE", None)
 
 # Load environment variables
-load_dotenv()
+env_path = find_dotenv()
+print(f"Loading .env from: {env_path}")
+load_dotenv(dotenv_path=env_path)
 
 # Get variables from environment
 DATASET_PATH = os.getenv("DATASET_PATH")
 TARGET_WAVE = os.getenv("TARGET_WAVE")
 
+# Debug print statements to verify the environment variables
+print(f"DATASET_PATH: '{DATASET_PATH}'")
+print(f"TARGET_WAVE: '{TARGET_WAVE}'")
+
+# Validate dataset path
+if not os.path.exists(DATASET_PATH):
+    raise FileNotFoundError(f"Dataset not found at {DATASET_PATH}")
 # Load and prepare the dataset
 dataset = LongitudinalDataset(DATASET_PATH)
 dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42)
@@ -22,7 +35,16 @@ dataset.setup_features_group("elsa")
 X_train, X_test, y_train, y_test = dataset.X_train, dataset.X_test, dataset.y_train, dataset.y_test
 
 # Preprocess the data
-def preprocess_data(X):
+def preprocess_data(X: np.ndarray) -> np.ndarray:
+    """
+    Preprocesses the input data array by replacing '?' with NaN and converting to numeric.
+
+    Args:
+        X (np.ndarray): The input data array.
+
+    Returns:
+        np.ndarray: The preprocessed data as a NumPy array.
+    """
     X_df = pd.DataFrame(X)
     X_df.replace('?', np.nan, inplace=True)
     X_df = X_df.apply(pd.to_numeric, errors='coerce')
@@ -44,18 +66,21 @@ y_test = pd.to_numeric(y_test, errors='coerce').values
 # Model parameters
 hidden_size = 64
 output_size = 1
+epochs = 1000
+learning_rate = 0.01
 dropout_rate = 0.5
 features_group = dataset.feature_groups()
 
 # Initialize and train the model
-net = build_skorch_model(input_size=X_train.shape[1], hidden_size=hidden_size, output_size=output_size, dropout_rate=dropout_rate, features_group=features_group)
-net.fit(X_train.astype(np.float32), y_train.astype(np.longlong))
+mlp = MLP(hidden_size, output_size, dropout_rate, features_group, epochs, learning_rate)
+mlp.fit(X_train, y_train.reshape(-1, 1), epochs, learning_rate)
 
 # Predict and evaluate
-y_pred = net.predict(X_test.astype(np.float32))
-accuracy = np.mean(y_pred == y_test)
+y_pred = mlp.predict(X_test)
+accuracy = np.mean(y_pred == y_test.reshape(-1, 1))
 print(f'Accuracy: {accuracy}')
 
+# Calculate additional metrics
 precision = precision_score(y_test, y_pred)
 recall = recall_score(y_test, y_pred)
 f1 = f1_score(y_test, y_pred)
