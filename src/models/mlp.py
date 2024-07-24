@@ -3,6 +3,7 @@ from overrides import override
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from functools import wraps
+from utils.logger import TrainingLogger
 
 # This state validation is code from Scikit-Longitudinal package
 def ensure_valid_state(method):
@@ -121,6 +122,7 @@ class MLP(BaseMLP):
         self.features_group = features_group
         self.epochs = epochs
         self.learning_rate = learning_rate
+        self.logger = TrainingLogger()
         
         # Initialize weights for each feature group
         self.weights: List[np.ndarray] = []
@@ -218,7 +220,7 @@ class MLP(BaseMLP):
         loss = -(1/m) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
     
-    def backward(self, X: np.ndarray, y: np.ndarray, y_pred: np.ndarray) -> None:
+    def backward(self, X: np.ndarray, y: np.ndarray, y_pred: np.ndarray, learning_rate: float) -> None:
         """
         Update the weights and biases of the neural network using backpropagation.
 
@@ -226,6 +228,7 @@ class MLP(BaseMLP):
             X (np.ndarray): The input data.
             y (np.ndarray): The target labels.
             y_pred (np.ndarray): The predicted labels.
+            learning_rate (float): The learning rate for updating the weights and biases.
         """
         m: int = y.shape[0]
         
@@ -252,11 +255,11 @@ class MLP(BaseMLP):
         
         # Update the weights and biases
         for idx in range(len(self.weights)):
-            self.weights[idx] -= self.learning_rate * d_loss_weights[idx]
-            self.biases[idx] -= self.learning_rate * d_loss_biases[idx]
+            self.weights[idx] -= learning_rate * d_loss_weights[idx]
+            self.biases[idx] -= learning_rate * d_loss_biases[idx]
         
-        self.W2 -= self.learning_rate * d_loss_W2
-        self.b2 -= self.learning_rate * d_loss_b2
+        self.W2 -= learning_rate * d_loss_W2
+        self.b2 -= learning_rate * d_loss_b2
         
     def calc_loss(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
         """
@@ -291,9 +294,9 @@ class MLP(BaseMLP):
         for epoch in range(self.epochs):
             y_pred: np.ndarray = self.forward(X, training=True)
             loss: float = self.compute_loss(y_pred, y)
-            self.backward(X, y, y_pred)
-            if epoch % 100 == 0:
-                print(f'Epoch {epoch}, Loss: {loss}')
+            accuracy: float = np.mean(np.round(y_pred) == y)  # Calculate accuracy
+            self.logger.log(epoch, loss, accuracy)  # Log the information
+            self.logger.end_epoch()  # End the current epoch logging
         return self
 
     @ensure_valid_state
