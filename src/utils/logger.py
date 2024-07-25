@@ -9,7 +9,6 @@ class TrainingLogger:
         last_time (float): The time at the last log.
     """
     def __init__(self) -> None:
-        
         self.start_time: float = time.time()
         self.last_time: float = self.start_time
 

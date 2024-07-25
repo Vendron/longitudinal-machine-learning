@@ -5,8 +5,21 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from functools import wraps
 from utils.logger import TrainingLogger
 
-# This state validation is code from Scikit-Longitudinal package
+# This state validation function is code from Scikit-Longitudinal package
 def ensure_valid_state(method):
+    """
+    Decorator function that ensures the model is in a valid state before executing the wrapped method.
+
+    Args:
+        method (function): The method to be wrapped.
+
+    Raises:
+        ValueError: If the model has not been fitted yet and the wrapped method is either '_predict' or '_predict_proba'.
+        ValueError: If the feature groups have not been set yet and the wrapped method is 'fit'.
+
+    Returns:
+        function: The wrapped method.
+    """
     @wraps(method)
     def wrapper(self, *args, **kwargs):
         if method.__name__ in ["_predict", "_predict_proba"] and self._mlp is None:
@@ -215,9 +228,9 @@ class MLP(BaseMLP):
         Returns:
             float: The computed loss.
         """
-        m = y_true.shape[0]
+        num_samples = y_true.shape[0]
         y_pred = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero and log(0)
-        loss = -(1/m) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+        loss = -(1/num_samples) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
     
     def backward(self, X: np.ndarray, y: np.ndarray, y_pred: np.ndarray, learning_rate: float) -> None:
@@ -230,7 +243,7 @@ class MLP(BaseMLP):
             y_pred (np.ndarray): The predicted labels.
             learning_rate (float): The learning rate for updating the weights and biases.
         """
-        m: int = y.shape[0]
+        num_samples: int = y.shape[0]
         
         y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero
         
@@ -238,8 +251,8 @@ class MLP(BaseMLP):
         d_loss_a2: np.ndarray = -(y / y_pred) + ((1 - y) / (1 - y_pred))
         d_loss_z2: np.ndarray = d_loss_a2 * self.sigmoid_derivative(y_pred)
         
-        d_loss_W2: np.ndarray = np.dot(np.concatenate(self.a1, axis=1).T, d_loss_z2) / m
-        d_loss_b2: np.ndarray = np.sum(d_loss_z2, axis=0, keepdims=True) / m 
+        d_loss_W2: np.ndarray = np.dot(np.concatenate(self.a1, axis=1).T, d_loss_z2) / num_samples
+        d_loss_b2: np.ndarray = np.sum(d_loss_z2, axis=0, keepdims=True) / num_samples
         
         d_loss_a1: np.ndarray = np.dot(d_loss_z2, self.W2.T)
         d_loss_z1: List[np.ndarray] = [d_loss_a1[:, i * self.hidden_size:(i + 1) * self.hidden_size] * self.sigmoid_derivative(self.a1[i])
@@ -250,8 +263,8 @@ class MLP(BaseMLP):
         
         for idx, group in enumerate(self.features_group):
             group_x: np.ndarray = X[:, group]
-            d_loss_weights[idx]: np.ndarray = np.dot(group_x.T, d_loss_z1[idx]) / m # type: ignore
-            d_loss_biases[idx]: np.ndarray = np.sum(d_loss_z1[idx], axis=0, keepdims=True) / m # type: ignore
+            d_loss_weights[idx]: np.ndarray = np.dot(group_x.T, d_loss_z1[idx]) / num_samples # type: ignore
+            d_loss_biases[idx]: np.ndarray = np.sum(d_loss_z1[idx], axis=0, keepdims=True) / num_samples # type: ignore
         
         # Update the weights and biases
         for idx in range(len(self.weights)):
@@ -272,9 +285,9 @@ class MLP(BaseMLP):
         Returns:
             float: The calculated loss.
         """
-        m: int = y_true.shape[0]
+        num_samples: int = y_true.shape[0]
         y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero
-        loss: float = -(1/m) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+        loss: float = -(1/num_samples) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
         
     @ensure_valid_state

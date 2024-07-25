@@ -1,3 +1,4 @@
+from typing import Literal
 import unittest
 import numpy as np
 import pytest
@@ -5,6 +6,15 @@ from sklearn.datasets import make_classification
 
 @pytest.fixture
 def synthetic_data():
+    """
+    Generate synthetic data for testing purposes.
+
+    Returns:
+        X (array-like): The generated feature matrix.
+        y (array-like): The generated target vector.
+        features_group (list): A list of feature groups.
+        n_non_longitudinal (int): The number of non-longitudinal features.
+    """
     n_samples = 100
     n_features_per_group = 2
     n_longitudinal_groups = 2
@@ -30,7 +40,7 @@ def synthetic_data():
 
 
 class TestTemporalMLP(unittest.TestCase):
-    def test_forward_pass(self, synthetic_data):
+    def test_forward_pass(self, synthetic_data: tuple[np.ndarray, np.ndarray, list[list[int]], Literal[2]]):
         _, _, features_group, _ = synthetic_data
 
         y_pred = net.predict(X)
