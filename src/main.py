@@ -41,12 +41,12 @@ X_test: np.ndarray = preprocess_data(X_test)
 
 # Normalize data
 scaler: MinMaxScaler = MinMaxScaler()
-X_train: np.ndarray = scaler.fit_transform(X_train)
-X_test: np.ndarray = scaler.transform(X_test)
+X_train: np.ndarray = scaler.fit_transform(X_train).astype(np.float32)
+X_test: np.ndarray = scaler.transform(X_test).astype(np.float32)
 
-# Convert y to numeric values
-y_train: np.ndarray = pd.to_numeric(y_train, errors='coerce').values
-y_test: np.ndarray = pd.to_numeric(y_test, errors='coerce').values
+# Convert y to numeric values (float32) because skorch requires float32
+y_train: np.ndarray = pd.to_numeric(y_train, errors='coerce').values.astype(np.float32)
+y_test: np.ndarray = pd.to_numeric(y_test, errors='coerce').values.astype(np.float32)
 
 # Model parameters
 input_size: int = X_train.shape[1]
