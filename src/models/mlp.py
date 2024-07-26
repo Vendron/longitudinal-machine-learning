@@ -5,21 +5,8 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from functools import wraps
 from utils.logger import TrainingLogger
 
-# This state validation function is code from Scikit-Longitudinal package
+# This state validation is code from Scikit-Longitudinal package
 def ensure_valid_state(method):
-    """
-    Decorator function that ensures the model is in a valid state before executing the wrapped method.
-
-    Args:
-        method (function): The method to be wrapped.
-
-    Raises:
-        ValueError: If the model has not been fitted yet and the wrapped method is either '_predict' or '_predict_proba'.
-        ValueError: If the feature groups have not been set yet and the wrapped method is 'fit'.
-
-    Returns:
-        function: The wrapped method.
-    """
     @wraps(method)
     def wrapper(self, *args, **kwargs):
         if method.__name__ in ["_predict", "_predict_proba"] and self._mlp is None:
@@ -128,28 +115,38 @@ class MLP(BaseMLP):
         dropout_rate (float): Dropout rate for regularization.
         features_group (List[List[int]]): List of feature indices for each group.
     """
-    def __init__(self, hidden_size: int, output_size: int, dropout_rate: float, features_group: List[List[int]], epochs: int = 1000, learning_rate: float = 0.01) -> None:
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.dropout_rate = dropout_rate
-        self.features_group = features_group
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.logger = TrainingLogger()
+    def __init__(self, hidden_layer_sizes: List[int], output_size: int, dropout_rate: float, features_group: List[List[int]], epochs: int = 1000, learning_rate: float = 0.01) -> None:
+        self.hidden_layer_sizes: List[int] = hidden_layer_sizes
+        self.output_size: int = output_size
+        self.dropout_rate: float = dropout_rate
+        self.features_group: List[List[int]] = features_group
+        self.epochs: int = epochs
+        self.learning_rate: float = learning_rate
+        self.logger: TrainingLogger = TrainingLogger()
         
         # Initialize weights for each feature group
-        self.weights: List[np.ndarray] = []
-        self.biases: List[np.ndarray] = []
+        self.input_weights: List[np.ndarray] = []
+        self.input_biases: List[np.ndarray] = []
         for group in features_group:
             group_size: int = len(group)
-            self.weights.append(np.random.randn(group_size, hidden_size))
-            self.biases.append(np.zeros((1, hidden_size)))
+            self.input_weights.append(np.random.randn(group_size, hidden_layer_sizes[0]))
+            self.input_biases.append(np.zeros((1, hidden_layer_sizes[0])))
         
-        self.W2 = np.random.randn(hidden_size * len(features_group), output_size)
-        self.b2 = np.zeros((1, output_size))
+        # Initialize weights for hidden layers
+        self.hidden_weights: List[np.ndarray] = []
+        self.hidden_biases: List[np.ndarray] = []
+        input_size: int = hidden_layer_sizes[0] * len(features_group)
+        for i in range(len(hidden_layer_sizes) - 1):
+            self.hidden_weights.append(np.random.randn(input_size, hidden_layer_sizes[i + 1]))
+            self.hidden_biases.append(np.zeros((1, hidden_layer_sizes[i + 1])))
+            input_size: int = hidden_layer_sizes[i + 1]
+        
+        # Initialize weights for output layer
+        self.output_weights: np.ndarray = np.random.randn(input_size, output_size)
+        self.output_biases: np.ndarray = np.zeros((1, output_size))
         self._mlp: Optional[MLP] = None
-        self.a1: Optional[List[np.ndarray]] = None  # Store intermediate activations
-        
+        self.a_hidden: Optional[List[np.ndarray]] = None  # Store intermediate activations
+    
     def sigmoid(self, z: float or np.ndarray) -> float or np.ndarray: # type: ignore
         """
         Sigmoid activation function.
@@ -184,53 +181,61 @@ class MLP(BaseMLP):
         Returns:
             np.ndarray: The layer output after applying dropout regularization.
         """
-        mask = (np.random.rand(*layer_output.shape) < self.dropout_rate) / self.dropout_rate 
+        mask: np.ndarray = (np.random.rand(*layer_output.shape) < self.dropout_rate) / self.dropout_rate 
         return layer_output * mask
     
     def forward(self, X: np.ndarray, training: bool = False) -> np.ndarray:
-        """
-        Calculate the forward pass of the neural network.
+            """Calculate the forward propagation through the MLP model.
 
-        Args:
-            X (np.ndarray): The input data.
-            training (bool): Whether the forward pass is performed during training or not.
+            Args:
+                X (np.ndarray): Input data of shape (batch_size, num_features).
+                training (bool, optional): Flag indicating whether the model is in training mode or not.
+                    Defaults to False.
 
-        Returns:
-            np.ndarray: The output of the neural network.
-        """
-        group_outputs = []
-        self.a1 = []
-        for idx, group in enumerate(self.features_group):
-            group_x = X[:, group]
-            z1 = np.dot(group_x, self.weights[idx]) + self.biases[idx]
-            a1 = self.sigmoid(z1)
-            if training:
-                a1 = self.dropout(a1)
-            group_outputs.append(a1)
-            self.a1.append(a1)
-        
-        concatenated_outputs = np.concatenate(group_outputs, axis=1)
-        
-        # Final output layer
-        z2 = np.dot(concatenated_outputs, self.W2) + self.b2
-        a2 = self.sigmoid(z2)
-        
-        return a2
+            Returns:
+                np.ndarray: Output of the MLP model, of shape (batch_size, num_classes).
+            """
+            group_outputs: List[np.ndarray] = []
+            self.a_hidden: List[np.ndarray] = []
+            for idx, group in enumerate(self.features_group):
+                group_x = X[:, group]
+                z1: np.ndarray = np.dot(group_x, self.input_weights[idx]) + self.input_biases[idx]
+                a1: np.ndarray = self.sigmoid(z1)
+                if training:
+                    a1: np.ndarray = self.dropout(a1)
+                group_outputs.append(a1)
+            
+            concatenated_outputs: np.ndarray = np.concatenate(group_outputs, axis=1)
+            self.a_hidden.append(concatenated_outputs)
+            
+            for i in range(len(self.hidden_weights)):
+                z_hidden: np.ndarray = np.dot(self.a_hidden[-1], self.hidden_weights[i]) + self.hidden_biases[i]
+                a_hidden: np.ndarray = self.sigmoid(z_hidden)
+                if training:
+                    a_hidden: np.ndarray = self.dropout(a_hidden)
+                self.a_hidden.append(a_hidden)
+            
+            z_output: np.ndarray = np.dot(self.a_hidden[-1], self.output_weights) + self.output_biases
+            a_output: np.ndarray = self.sigmoid(z_output)
+            
+            return a_output
     
     def compute_loss(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
         """
-        Compute the loss between predicted and true values.
+        Performs the backward pass of the MLP model to compute gradients and update weights and biases.
 
         Args:
-            y_pred (np.ndarray): The predicted values.
-            y_true (np.ndarray): The true values.
+            X (np.ndarray): The input data of shape (m, n), where m is the number of samples and n is the number of features.
+            y (np.ndarray): The target labels of shape (m,).
+            y_pred (np.ndarray): The predicted labels of shape (m,).
+            learning_rate (float): The learning rate for updating the weights and biases.
 
         Returns:
-            float: The computed loss.
+            None
         """
-        num_samples = y_true.shape[0]
-        y_pred = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero and log(0)
-        loss = -(1/num_samples) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+        num_samples: int = y_true.shape[0]
+        y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero and log(0)
+        loss: float = -(1/num_samples) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
     
     def backward(self, X: np.ndarray, y: np.ndarray, y_pred: np.ndarray, learning_rate: float) -> None:
@@ -244,35 +249,45 @@ class MLP(BaseMLP):
             learning_rate (float): The learning rate for updating the weights and biases.
         """
         num_samples: int = y.shape[0]
-        
         y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero
         
         # Compute gradients
         d_loss_a2: np.ndarray = -(y / y_pred) + ((1 - y) / (1 - y_pred))
         d_loss_z2: np.ndarray = d_loss_a2 * self.sigmoid_derivative(y_pred)
         
-        d_loss_W2: np.ndarray = np.dot(np.concatenate(self.a1, axis=1).T, d_loss_z2) / num_samples
-        d_loss_b2: np.ndarray = np.sum(d_loss_z2, axis=0, keepdims=True) / num_samples
+        d_loss_output_weights: np.ndarray = np.dot(self.a_hidden[-1].T, d_loss_z2) / num_samples
+        d_loss_output_biases: np.ndarray = np.sum(d_loss_z2, axis=0, keepdims=True) / num_samples
         
-        d_loss_a1: np.ndarray = np.dot(d_loss_z2, self.W2.T)
-        d_loss_z1: List[np.ndarray] = [d_loss_a1[:, i * self.hidden_size:(i + 1) * self.hidden_size] * self.sigmoid_derivative(self.a1[i])
-                     for i in range(len(self.features_group))]
+        d_loss_a_hidden: np.ndarray = np.dot(d_loss_z2, self.output_weights.T)
         
-        d_loss_weights: List[np.ndarray] = [np.zeros_like(w) for w in self.weights]
-        d_loss_biases: List[np.ndarray] = [np.zeros_like(b) for b in self.biases]
+        d_loss_hidden_weights: List[np.ndarray] = [np.zeros_like(w) for w in self.hidden_weights]
+        d_loss_hidden_biases: List[np.ndarray] = [np.zeros_like(b) for b in self.hidden_biases]
+        
+        for i in range(len(self.hidden_weights) - 1, -1, -1):
+            d_loss_z_hidden = d_loss_a_hidden * self.sigmoid_derivative(self.a_hidden[i + 1])
+            d_loss_hidden_weights[i] = np.dot(self.a_hidden[i].T, d_loss_z_hidden) / num_samples
+            d_loss_hidden_biases[i] = np.sum(d_loss_z_hidden, axis=0, keepdims=True) / num_samples
+            d_loss_a_hidden = np.dot(d_loss_z_hidden, self.hidden_weights[i].T)
+        
+        d_loss_input_weights: List[np.ndarray] = [np.zeros_like(w) for w in self.input_weights]
+        d_loss_input_biases: List[np.ndarray] = [np.zeros_like(b) for b in self.input_biases]
         
         for idx, group in enumerate(self.features_group):
             group_x: np.ndarray = X[:, group]
-            d_loss_weights[idx]: np.ndarray = np.dot(group_x.T, d_loss_z1[idx]) / num_samples # type: ignore
-            d_loss_biases[idx]: np.ndarray = np.sum(d_loss_z1[idx], axis=0, keepdims=True) / num_samples # type: ignore
+            d_loss_input_weights[idx]: np.ndarray = np.dot(group_x.T, d_loss_a_hidden[:, idx * self.hidden_layer_sizes[0]:(idx + 1) * self.hidden_layer_sizes[0]]) / num_samples # type: ignore
+            d_loss_input_biases[idx]: np.ndarray = np.sum(d_loss_a_hidden[:, idx * self.hidden_layer_sizes[0]:(idx + 1) * self.hidden_layer_sizes[0]], axis=0, keepdims=True) / num_samples # type: ignore
         
-        # Update the weights and biases
-        for idx in range(len(self.weights)):
-            self.weights[idx] -= learning_rate * d_loss_weights[idx]
-            self.biases[idx] -= learning_rate * d_loss_biases[idx]
+        # Update weights and biases
+        for idx in range(len(self.input_weights)):
+            self.input_weights[idx] -= learning_rate * d_loss_input_weights[idx]
+            self.input_biases[idx] -= learning_rate * d_loss_input_biases[idx]
         
-        self.W2 -= learning_rate * d_loss_W2
-        self.b2 -= learning_rate * d_loss_b2
+        for i in range(len(self.hidden_weights)):
+            self.hidden_weights[i] -= learning_rate * d_loss_hidden_weights[i]
+            self.hidden_biases[i] -= learning_rate * d_loss_hidden_biases[i]
+        
+        self.output_weights -= learning_rate * d_loss_output_weights
+        self.output_biases -= learning_rate * d_loss_output_biases
         
     def calc_loss(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
         """
@@ -286,7 +301,7 @@ class MLP(BaseMLP):
             float: The calculated loss.
         """
         num_samples: int = y_true.shape[0]
-        y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10)  # Avoid division by zero
+        y_pred: np.ndarray = np.clip(y_pred, 1e-10, 1 - 1e-10) # Avoid division by zero
         loss: float = -(1/num_samples) * np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
         return loss
         
@@ -307,9 +322,9 @@ class MLP(BaseMLP):
         for epoch in range(self.epochs):
             y_pred: np.ndarray = self.forward(X, training=True)
             loss: float = self.compute_loss(y_pred, y)
-            accuracy: float = np.mean(np.round(y_pred) == y)  # Calculate accuracy
-            self.logger.log(epoch, loss, accuracy)  # Log the information
-            self.logger.end_epoch()  # End the current epoch logging
+            accuracy: float = np.mean(np.round(y_pred) == y) # Calculate accuracy
+            self.logger.log(epoch, loss, accuracy) # Log the current epoch, loss, and accuracy
+            self.backward(X, y, y_pred, self.learning_rate) # Perform backpropagation
         return self
 
     @ensure_valid_state
