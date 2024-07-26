@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
 from scikit_longitudinal.data_preparation import LongitudinalDataset
-from models.mlp import MLP
+from models.mlp import TemporalMLP
 import os
 from dotenv import load_dotenv
 
@@ -52,16 +52,17 @@ y_test: np.ndarray = pd.to_numeric(y_test, errors='coerce').values
 input_size: int = X_train.shape[1]
 hidden_sizes: List[int] = [64, 32]  # List of hidden layer sizes
 output_size: int = 1
-epochs: int = 1000
+epochs: int = 250
 learning_rate: float = 0.01
 dropout_rate: float = 0.5
+features_group: List[List[int]] = dataset.feature_groups()
 
 # Initialize and train the model
-mlp: MLP = MLP(input_size, hidden_sizes, output_size, dropout_rate, epochs, learning_rate)
-mlp.fit(X_train.astype(np.float32), y_train.reshape(-1, 1).astype(np.float32))
+mlp: TemporalMLP = TemporalMLP(input_size, hidden_sizes, output_size, dropout_rate, epochs, learning_rate, features_group=features_group)
+mlp.fit(X_train, y_train.reshape(-1, 1))
 
 # Predict and evaluate
-y_pred: np.ndarray = mlp.predict(X_test.astype(np.float32))
+y_pred: np.ndarray = mlp.predict(X_test)
 accuracy = np.mean(y_pred == y_test.reshape(-1, 1))
 
 # Calculate additional metrics
