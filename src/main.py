@@ -1,12 +1,14 @@
-from typing import List
+from typing import List, Dict
 import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
+from sklearn.model_selection import KFold, cross_validate
 from sklearn.preprocessing import MinMaxScaler
 from scikit_longitudinal.data_preparation import LongitudinalDataset
-from models.mlp import TemporalMLP
+from models.mlp.mlp import TemporalMLP
 import os
 from dotenv import load_dotenv
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -58,8 +60,18 @@ dropout_rate: float = 0.5
 features_group: List[List[int]] = dataset.feature_groups()
 
 # Initialize and train the model
-mlp: TemporalMLP = TemporalMLP(input_size, hidden_sizes, output_size, dropout_rate, epochs, learning_rate, features_group=features_group)
-mlp.fit(X_train, y_train.reshape(-1, 1))
+mlp: TemporalMLP = TemporalMLP(input_size, hidden_sizes, output_size, dropout_rate, epochs, learning_rate, features_group)
+
+# Reshape y_train to 2D array
+y_train: np.ndarray = y_train.reshape(-1, 1)
+
+kf: KFold = KFold(n_splits=5, shuffle=True, random_state=42)
+cv_results: Dict[str, List[float]] = cross_validate(mlp, X_train, y_train, cv=kf, scoring=['accuracy', 'precision', 'recall', 'f1', 'roc_auc'])
+
+print(f'CV Results: {cv_results}')
+print(f'Accuracy: {np.mean(cv_results["test_accuracy"])}')
+
+mlp.fit(X_train, y_train)
 
 # Predict and evaluate
 y_pred: np.ndarray = mlp.predict(X_test)

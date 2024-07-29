@@ -1,1 +1,1 @@
-from .mlp import TemporalMLP
+from .mlp.mlp import TemporalMLP
