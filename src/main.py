@@ -12,7 +12,9 @@ from torch.nn.functional import dropout
 from skorch import NeuralNetBinaryClassifier
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import GridSearchCV
 import logging
+from functools import partial
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +38,7 @@ ITERATOR_TRAIN_SHUFFLE: bool = True # Shuffle the training data before each epoc
 TRAIN_SPLIT: None = None # Use the entire training data for training
 VERBOSE: int = 1 # Verbosity level for logging during training, where 0 = silent, 1 = progress bar, 2 = one line per epoch and 3 = one line per batch.
 CRITERION: nn.Module = BCEWithLogitsLoss() # Binary Cross-Entropy loss function for binary classification tasks. This function combines a Sigmoid layer and the BCE loss in one single class.
+KFOLDS: int = 5
 
 # Set seeds for reproducibility - Note later: Issue with re-recurring confusion matrix values.  
 torch.manual_seed(42)
@@ -117,7 +120,7 @@ class LongitudinalMLPModule(Module):
                 Sigmoid()
             ))
 
-        self.output_layer: Linear = Linear(hidden_size * len(features_group), output_size)
+        self.output_layer: Linear = Linear(hidden_size * len(features_group), output_size) 
 
     def forward(self, X: Tensor) -> Tensor:
         """
@@ -146,6 +149,21 @@ class LongitudinalMLPModule(Module):
 
         return output
 
+def create_search_space() -> dict:
+    lr_range: List[float] = [0.001, 0.01, 0.1, 0.5]
+    max_epochs_range: List[int] = [50, 100, 200, 300]
+    hidden_size_range: List[int] = [32, 64, 128, 256]
+    dropout_rate_range: List[float] = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+    search_space: dict = {
+        'lr': lr_range,
+        'max_epochs': max_epochs_range,
+        'module__hidden_size': hidden_size_range,
+        'module__dropout_rate': dropout_rate_range,
+    }
+
+    return search_space
+
 def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray, features_group: List[List[int]]) -> None:
     """
     Train the MLP model and evaluate its performance on the test data.
@@ -154,6 +172,9 @@ def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: n
     data, and evaluates its performance on the test data by calculating various metrics such as 
     accuracy, precision, recall, F1 score, confusion matrix, and ROC-AUC score. The results are logged
     for further analysis.
+    
+    The hyperparameters are optimized using GridSearchCV, and the best model is selected based on the
+    accuracy score.
 
     Args:
         X_train (np.ndarray): The preprocessed training data.
@@ -162,21 +183,32 @@ def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: n
         y_test (np.ndarray): The test target values.
         features_group (List[List[int]]): A list of feature groups, where each group contains indices of features.
     """
+    model_partial: Module = partial(LongitudinalMLPModule, output_size=OUTPUT_SIZE, features_group=features_group)
+    
     model: NeuralNetBinaryClassifier = NeuralNetBinaryClassifier(
-        LongitudinalMLPModule(HIDDEN_SIZE, OUTPUT_SIZE, DROPOUT_RATE, features_group),
+        module=model_partial,
         max_epochs=MAX_EPOCHS,
         lr=LR,
         iterator_train__shuffle=ITERATOR_TRAIN_SHUFFLE,
         train_split=TRAIN_SPLIT,
-        verbose=VERBOSE,
+        verbose=0,  # Deactivate verbose logging for GridSearchCV
         criterion=CRITERION
     )
-
+    
+    search_space: dict = create_search_space()
+    
+    search: GridSearchCV = GridSearchCV(model, search_space, cv=KFOLDS, scoring='accuracy', n_jobs=-1, verbose=2)
+    
+    logger.info("Gridsearching...")
+    search.fit(X_train.astype(np.float32), y_train.astype(np.float32))
+    logger.info(f"Best score: {search.best_score_:.3f}, Best params: {search.best_params_}")
+    
     logger.info("Starting model training...")
-    model.fit(X_train.astype(np.float32), y_train.astype(np.float32))
+    best_model: NeuralNetBinaryClassifier = search.best_estimator_
+    best_model.fit(X_train.astype(np.float32), y_train.astype(np.float32))
 
     logger.info("Evaluating model...")
-    y_predictions: np.ndarray = model.predict(X_test.astype(np.float32))
+    y_predictions: np.ndarray  = best_model.predict(X_test.astype(np.float32))
     accuracy: float = np.mean(y_predictions == y_test)
     logger.info(f'Accuracy: {accuracy:.4f}')
 
