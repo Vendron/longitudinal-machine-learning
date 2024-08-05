@@ -1,15 +1,15 @@
-from typing import List
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 import os
 from scikit_longitudinal.data_preparation import LongitudinalDataset
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 from torch.nn import Module, Linear, Sigmoid, Sequential, BCEWithLogitsLoss, ModuleList
 from torch import Tensor, cat
 from torch.nn.functional import dropout
 from skorch import NeuralNetBinaryClassifier
+from skorch.callbacks import EpochScoring
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import GridSearchCV
@@ -28,17 +28,17 @@ DATASET_PATH: str = os.getenv("DATASET_PATH")
 TARGET_WAVE: str = os.getenv("TARGET_WAVE")
 # Hyperparameters
 INPUT_SIZE: int = None  # Will be set after loading data 
-HIDDEN_SIZE: int = 64 # Number of neurons in each hidden layer
+HIDDEN_SIZE: int = 128 # Number of neurons in each hidden layer
 OUTPUT_SIZE: int = 1 # Number of neurons in the output layer
-DROPOUT_RATE: float = 0.2 # Dropout rate for regularization (Dropout layer is applied after hidden layers to prevent overfitting by randomly setting a fraction of input units to 0)
+DROPOUT_RATE: float = 0.4 # Dropout rate for regularization (Dropout layer is applied after hidden layers to prevent overfitting by randomly setting a fraction of input units to 0)
 # Specific hyperparameters for the MLP model
-MAX_EPOCHS: int = 100 # Maximum number of epochs for training
-LR: float = 0.001 # Learning rate for optimization (Adam optimizer is used by default, however other optimizers can be used by specifying the optimizer parameter in the NeuralNetBinaryClassifier constructor)
+MAX_EPOCHS: int = 200 # Maximum number of epochs for training
+LR: float = 0.3 # Learning rate for optimization (Adam optimizer is used by default, however other optimizers can be used by specifying the optimizer parameter in the NeuralNetBinaryClassifier constructor)
 ITERATOR_TRAIN_SHUFFLE: bool = True # Shuffle the training data before each epoch
 TRAIN_SPLIT: None = None # Use the entire training data for training
 VERBOSE: int = 1 # Verbosity level for logging during training, where 0 = silent, 1 = progress bar, 2 = one line per epoch and 3 = one line per batch.
-CRITERION: nn.Module = BCEWithLogitsLoss() # Binary Cross-Entropy loss function for binary classification tasks. This function combines a Sigmoid layer and the BCE loss in one single class.
-KFOLDS: int = 5
+CRITERION: Module = BCEWithLogitsLoss() # Binary Cross-Entropy loss function for binary classification tasks. This function combines a Sigmoid layer and the BCE loss in one single class.
+KFOLDS: int = 10 # Number of folds for cross-validation
 
 # Set seeds for reproducibility - Note later: Issue with re-recurring confusion matrix values.  
 torch.manual_seed(42)
@@ -75,7 +75,7 @@ def load_and_preprocess_data() -> tuple:
         tuple: A tuple containing the preprocessed training data, test data, training targets, test targets, and feature groups.
     """
     dataset: LongitudinalDataset = LongitudinalDataset(DATASET_PATH)
-    dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42)
+    dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42, test_size=0.1)
     dataset.setup_features_group("elsa")
 
     X_train: np.ndarray = preprocess_data(dataset.X_train)
@@ -150,10 +150,10 @@ class LongitudinalMLPModule(Module):
         return output
 
 def create_search_space() -> dict:
-    lr_range: List[float] = [0.001, 0.01, 0.1, 0.5]
-    max_epochs_range: List[int] = [50, 100, 200, 300]
-    hidden_size_range: List[int] = [32, 64, 128, 256]
-    dropout_rate_range: List[float] = [0.1, 0.2, 0.3, 0.4, 0.5]
+    lr_range: List[float] = [0.3, 0.5, 0.6]
+    max_epochs_range: List[int] = [200 ]
+    hidden_size_range: List[int] = [32, 128]
+    dropout_rate_range: List[float] = [0.3, 0.4]
 
     search_space: dict = {
         'lr': lr_range,
@@ -185,6 +185,10 @@ def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: n
     """
     model_partial: Module = partial(LongitudinalMLPModule, output_size=OUTPUT_SIZE, features_group=features_group)
     
+    search_space: Dict = create_search_space()
+    
+    auc_callback: EpochScoring = EpochScoring(scoring='roc_auc', lower_is_better=False)
+    
     model: NeuralNetBinaryClassifier = NeuralNetBinaryClassifier(
         module=model_partial,
         max_epochs=MAX_EPOCHS,
@@ -192,12 +196,13 @@ def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: n
         iterator_train__shuffle=ITERATOR_TRAIN_SHUFFLE,
         train_split=TRAIN_SPLIT,
         verbose=0,  # Deactivate verbose logging for GridSearchCV
-        criterion=CRITERION
+        criterion=CRITERION,
+        callbacks=[auc_callback]
     )
     
-    search_space: dict = create_search_space()
     
-    search: GridSearchCV = GridSearchCV(model, search_space, cv=KFOLDS, scoring='accuracy', n_jobs=-1, verbose=2)
+    
+    search: GridSearchCV = GridSearchCV(estimator=model, param_grid=search_space, cv=KFOLDS, refit=True, scoring='roc_auc', n_jobs=-1, verbose=2)
     
     logger.info("Gridsearching...")
     search.fit(X_train.astype(np.float32), y_train.astype(np.float32))
