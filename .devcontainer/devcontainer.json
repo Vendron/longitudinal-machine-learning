@@ -1,0 +1,8 @@
+{
+    "name": "longitudinal-machine-learning",
+    "dockerComposeFile": "../docker-compose.yml",
+    "workspaceFolder": "/app",
+    "build": {
+        "dockerfile": "../Dockerfile",
+    },
+}
