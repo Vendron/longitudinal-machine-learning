@@ -41,16 +41,33 @@ def load_and_prepare_data(dataset_path, target_wave):
 
     return X_train, X_test, y_train, y_test, dataset.feature_groups()
 
+def clean_feature_groups(feature_groups):
+    """Clean and verify the feature groups."""
+    cleaned_feature_groups = []
+    for features in feature_groups:
+        cleaned_features = [f for f in features if isinstance(f, str) and f != '-1']
+        cleaned_feature_groups.append(cleaned_features)
+    return cleaned_feature_groups
+
 def reshape_data_for_lstm(X, feature_groups):
     """Reshape the data for LSTM."""
+    feature_groups = clean_feature_groups(feature_groups)
+    
     n_samples = X.shape[0]
     n_timesteps = len(feature_groups)
     max_features = max(len(features) for features in feature_groups)
 
     X_reshaped = np.zeros((n_samples, n_timesteps, max_features))
     for i, features in enumerate(feature_groups):
-        indices = [X.columns.get_loc(f) for f in features]
-        X_reshaped[:, i, :len(indices)] = X.iloc[:, indices]
+        try:
+            indices = [X.columns.get_loc(f) for f in features]
+            X_reshaped[:, i, :len(indices)] = X.iloc[:, indices]
+        except KeyError as e:
+            print(f"KeyError: {e}. This means one of the features is missing from the DataFrame columns.")
+            print(f"Missing feature(s): {[f for f in features if f not in X.columns]}")
+            print(f"All available columns: {list(X.columns)}")
+            print(f"Feature groups: {feature_groups}")
+            raise
 
     return X_reshaped
 
