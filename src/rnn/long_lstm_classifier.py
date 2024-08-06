@@ -2,26 +2,27 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from torch.nn import Module, LSTM, Sequential, Linear, Sigmoid, BCEWithLogitsLoss
-from torch.nn.functional import dropout
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import (
     precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score, auc, classification_report, precision_recall_curve
 )
 from scikit_longitudinal.data_preparation import LongitudinalDataset
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Constants
-DATASET_PATH = 'DATASET.csv'
-TARGET_NAME = "heartattack"  # Replace with the correct target name from your dataset
-TARGET_WAVE = f"class_{TARGET_NAME}_w8"
+DATASET_PATH = os.getenv("DATASET_PATH")
+TARGET_WAVE = os.getenv("TARGET_WAVE")
 
 def preprocess_data(data):
     """Preprocess the data."""
-    data = pd.to_numeric(data, errors='coerce')
+    data = data.apply(pd.to_numeric, errors='coerce')
     data.fillna(data.mean(), inplace=True)
-    return data.values
+    return data
 
 def load_and_prepare_data(dataset_path, target_wave):
     """Load and prepare the dataset."""
@@ -35,8 +36,8 @@ def load_and_prepare_data(dataset_path, target_wave):
     y_test = pd.to_numeric(dataset.y_test, errors='coerce').values
 
     scaler = MinMaxScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+    X_train[X_train.columns] = scaler.fit_transform(X_train[X_train.columns])
+    X_test[X_test.columns] = scaler.transform(X_test[X_test.columns])
 
     return X_train, X_test, y_train, y_test, dataset.feature_groups()
 
@@ -44,48 +45,73 @@ def reshape_data_for_lstm(X, feature_groups):
     """Reshape the data for LSTM."""
     n_samples = X.shape[0]
     n_timesteps = len(feature_groups)
-    max_features = max(len(features) for features in feature_groups.values())
+    max_features = max(len(features) for features in feature_groups)
 
     X_reshaped = np.zeros((n_samples, n_timesteps, max_features))
-    for i, (wave, features) in enumerate(feature_groups.items()):
+    for i, features in enumerate(feature_groups):
         indices = [X.columns.get_loc(f) for f in features]
-        X_reshaped[:, i, :len(indices)] = X[:, indices]
+        X_reshaped[:, i, :len(indices)] = X.iloc[:, indices]
 
     return X_reshaped
 
-def build_lstm_model(input_shape):
-    """Build and compile the LSTM model."""
-    model = Sequential()
-    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
-    model.add(Dropout(0.2))
-    model.add(LSTM(50, return_sequences=False))
-    model.add(Dropout(0.2))
-    model.add(Dense(1, activation='sigmoid'))
+class LSTMModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, n_layers):
+        super(LSTMModel, self).__init__()
+        self.lstm = nn.LSTM(input_dim, hidden_dim, n_layers, batch_first=True)
+        self.dropout = nn.Dropout(0.2)
+        self.fc = nn.Linear(hidden_dim, output_dim)
+        self.sigmoid = nn.Sigmoid()
 
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    return model
+    def forward(self, x):
+        h_lstm, _ = self.lstm(x)
+        h_lstm = self.dropout(h_lstm[:, -1, :])
+        out = self.fc(h_lstm)
+        out = self.sigmoid(out)
+        return out
 
-def evaluate_model(model, X_test, y_test):
-    """Evaluate the model and print metrics."""
-    test_loss, test_accuracy = model.evaluate(X_test, y_test)
-    y_scores = model.predict(X_test)
-    y_pred = (y_scores > 0.5).astype(int)
+def train_model(model, train_loader, criterion, optimizer, n_epochs):
+    model.train()
+    for epoch in range(n_epochs):
+        running_loss = 0.0
+        for X_batch, y_batch in train_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+            optimizer.zero_grad()
+            y_pred = model(X_batch)
+            loss = criterion(y_pred, y_batch.unsqueeze(1).float())
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item() * X_batch.size(0)
+        epoch_loss = running_loss / len(train_loader.dataset)
+        print(f"Epoch {epoch+1}/{n_epochs}, Loss: {epoch_loss:.4f}")
 
-    conf_matrix = confusion_matrix(y_test, y_pred)
-    precision = precision_score(y_test, y_pred)
-    recall = recall_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
-    roc_auc = roc_auc_score(y_test, y_scores)
-    precision, recall, thresholds = precision_recall_curve(y_test, y_scores)
+def evaluate_model(model, test_loader):
+    model.eval()
+    y_true = []
+    y_pred = []
+    with torch.no_grad():
+        for X_batch, y_batch in test_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+            y_true.extend(y_batch.cpu().numpy())
+            y_pred_batch = model(X_batch)
+            y_pred.extend(y_pred_batch.cpu().numpy())
+
+    y_pred = np.array(y_pred)
+    y_pred_binary = (y_pred > 0.5).astype(int)
+    
+    precision = precision_score(y_true, y_pred_binary)
+    recall = recall_score(y_true, y_pred_binary)
+    f1 = f1_score(y_true, y_pred_binary)
+    roc_auc = roc_auc_score(y_true, y_pred)
+    precision, recall, thresholds = precision_recall_curve(y_true, y_pred)
     auprc = auc(recall, precision)
-    report = classification_report(y_test, y_pred)
+    report = classification_report(y_true, y_pred_binary)
+    conf_matrix = confusion_matrix(y_true, y_pred_binary)
 
-    print(f'Test Accuracy: {test_accuracy:.4f}')
-    print(f'Precision: {precision:.4f}')
-    print(f'Recall: {recall:.4f}')
-    print(f'F1 Score: {f1:.4f}')
-    print(f'ROC-AUC Score: {roc_auc:.4f}')
-    print(f'AUPRC Score: {auprc:.4f}')
+    print(f'Test Precision: {precision:.4f}')
+    print(f'Test Recall: {recall:.4f}')
+    print(f'Test F1 Score: {f1:.4f}')
+    print(f'Test ROC-AUC Score: {roc_auc:.4f}')
+    print(f'Test AUPRC Score: {auprc:.4f}')
     print(f'Confusion Matrix:\n{conf_matrix}')
     print(f'Classification Report:\n{report}')
 
@@ -96,11 +122,25 @@ def main():
     X_train_reshaped = reshape_data_for_lstm(X_train, feature_groups)
     X_test_reshaped = reshape_data_for_lstm(X_test, feature_groups)
     
-    model = build_lstm_model((X_train_reshaped.shape[1], X_train_reshaped.shape[2]))
+    train_dataset = TensorDataset(torch.tensor(X_train_reshaped, dtype=torch.float32), torch.tensor(y_train, dtype=torch.long))
+    test_dataset = TensorDataset(torch.tensor(X_test_reshaped, dtype=torch.float32), torch.tensor(y_test, dtype=torch.long))
     
-    model.fit(X_train_reshaped, y_train, epochs=100, batch_size=32, validation_split=0.2)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     
-    evaluate_model(model, X_test_reshaped, y_test)
+    input_dim = X_train_reshaped.shape[2]
+    hidden_dim = 50
+    output_dim = 1
+    n_layers = 2
+    n_epochs = 100
+    
+    model = LSTMModel(input_dim, hidden_dim, output_dim, n_layers).to(device)
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    
+    train_model(model, train_loader, criterion, optimizer, n_epochs)
+    evaluate_model(model, test_loader)
 
 if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     main()
