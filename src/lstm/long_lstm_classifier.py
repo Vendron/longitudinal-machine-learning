@@ -1,42 +1,42 @@
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import MinMaxScaler
 import torch
 from torch.nn import Module, LSTM, Dropout, Linear, Sigmoid, BCEWithLogitsLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score, auc, precision_recall_curve, classification_report
-
 import os
 from dotenv import load_dotenv
+from itertools import product
 
 load_dotenv()
 
 # Constants
 DATASET_PATH = os.getenv("DATASET_PATH")
 TARGET_WAVE = os.getenv("TARGET_WAVE")
-TARGET_NAME: str = DATASET_PATH.split("/")[-1].split("_")[0] # e.g. 'dementia' from 'dementia_data.csv'
+TARGET_NAME = DATASET_PATH.split("/")[-1].split("_")[0]
 
 # Hyperparameters
+KFOLDS = 10
+LOSS = BCEWithLogitsLoss()
+BIDIRECTIONAL = True
 LEARNING_RATE = 0.001
 MAX_EPOCHS = 100
-BATCH_SIZE = 64
-BIDIRECTIONAL = True
 DROPOUT = 0.5
 LSTM_UNITS = 100
-DENSE_UNITS = 1
-ACTIVATION = 'sigmoid'
-LOSS = BCEWithLogitsLoss()
-METRICS = ['accuracy']
-VALIDATION_SPLIT = 0.1
-PATIENCE = 10
 NUM_LAYERS = 2
-TEST_SIZE = 0.1
-KFOLDS = 10
+BATCH_SIZE = 64
+DENSE_UNITS = 1
 
-print(f"Dataset: {DATASET_PATH}")
-print(f"Target class: {TARGET_WAVE}")
+# Define the hyperparameter grid for grid search
+HYPERPARAMETER_GRID = {
+    'learning_rate': [0.001, 0.005],
+    'lstm_units': [50, 100],
+    'dropout': [0.3, 0.5, 0.7],
+    'num_layers': [1, 2],
+}
 
 def load_and_preprocess_data(dataset_path, target_class):
     """Load and preprocess the dataset."""
@@ -57,8 +57,8 @@ def load_and_preprocess_data(dataset_path, target_class):
     return X, y
 
 def normalize_data(X):
-    """Normalize the data."""
-    scaler = StandardScaler()
+    """Normalize the data using MinMaxScaler."""
+    scaler = MinMaxScaler()
     X_scaled = scaler.fit_transform(X)
     return X_scaled
 
@@ -97,7 +97,7 @@ def prepare_dataloaders(X_train, y_train, batch_size):
 class LSTMModel(Module):
     def __init__(self, input_dim, hidden_dim, output_dim, n_layers, bidirectional=False, dropout=0.2):
         super(LSTMModel, self).__init__()
-        self.lstm = LSTM(input_dim, hidden_dim, n_layers, batch_first=True, bidirectional=bidirectional, dropout=dropout)
+        self.lstm = LSTM(input_dim, hidden_dim, n_layers, batch_first=True, bidirectional=bidirectional, dropout=dropout if n_layers > 1 else 0.0)
         self.dropout = Dropout(dropout)
         direction_factor = 2 if bidirectional else 1
         self.fc = Linear(hidden_dim * direction_factor, output_dim)
@@ -124,10 +124,22 @@ def train_model(model, train_loader, criterion, optimizer, n_epochs, device):
             optimizer.step()
             running_loss += loss.item() * X_batch.size(0)
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch {epoch+1}/{n_epochs}, Loss: {epoch_loss:.4f}")
+        #print(f"Epoch {epoch+1}/{n_epochs}, Loss: {epoch_loss:.4f}")
 
 def evaluate_model(model, X_test, y_test, device):
-    """Evaluate the LSTM model."""
+    """
+    Evaluate the performance of a given model on the test data.
+
+    Args:
+        model (torch.nn.Module): The trained model to evaluate.
+        X_test (numpy.ndarray): The input features of the test data.
+        y_test (numpy.ndarray): The target labels of the test data.
+        device (torch.device): The device to run the evaluation on.
+
+    Returns:
+        dict: A dictionary containing the evaluation results, including precision, recall, F1 score,
+              ROC AUC score, AUPRC score, classification report, and confusion matrix.
+    """
     model.eval()
     y_true = []
     y_pred = []
@@ -152,14 +164,94 @@ def evaluate_model(model, X_test, y_test, device):
     report = classification_report(y_true, y_pred_binary)
     conf_matrix = confusion_matrix(y_true, y_pred_binary)
 
-    print(f'Test Precision: {precision:.4f}')
-    print(f'Test Recall: {recall:.4f}')
-    print(f'Test F1 Score: {f1:.4f}')
-    print(f'Test ROC-AUC Score: {roc_auc:.4f}')
-    print(f'Test AUPRC Score: {auprc:.4f}')
-    print(f'Confusion Matrix:\n{conf_matrix}')
-    print(f'Classification Report:\n{report}')
-    return precision, recall, f1, roc_auc, auprc
+    results = {
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'roc_auc': roc_auc,
+        'auprc': auprc,
+        'report': report,
+        'conf_matrix': conf_matrix
+    }
+    
+    return results
+
+def grid_search(X, y, param_grid, k_folds):
+    """Perform grid search for hyperparameter tuning."""
+    best_score = 0
+    best_params = None
+    all_results = []
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    param_list = list(product(*param_grid.values()))
+    param_keys = list(param_grid.keys())
+    
+    for params in param_list:
+        param_dict = dict(zip(param_keys, params))
+        print(f"Testing parameters: {param_dict}")
+        
+        kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+        fold_results = []
+
+        for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
+            print(f'Fold {fold+1}/{k_folds}')
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y.values[train_idx], y.values[test_idx]
+            
+            train_loader = prepare_dataloaders(X_train, y_train, BATCH_SIZE)
+            
+            model = LSTMModel(
+                input_dim=X_train.shape[2],
+                hidden_dim=param_dict['lstm_units'],
+                output_dim=DENSE_UNITS,
+                n_layers=param_dict['num_layers'],
+                bidirectional=BIDIRECTIONAL,
+                dropout=param_dict['dropout']
+            ).to(device)
+            
+            optimizer = Adam(model.parameters(), lr=param_dict['learning_rate'])
+            
+            train_model(model, train_loader, LOSS, optimizer, MAX_EPOCHS, device)
+            
+            results = evaluate_model(model, X_test, y_test, device)
+            fold_results.append(results)
+
+        avg_score = np.mean([fold_result['f1'] for fold_result in fold_results])
+        all_results.append((param_dict, fold_results))
+        
+        if avg_score > best_score:
+            best_score = avg_score
+            best_params = param_dict
+
+    return best_params, best_score, all_results
+
+def save_results_to_file(results, filename):
+    """Save the results to a file."""
+    with open(filename, 'w') as f:
+        for param_dict, fold_results in results:
+            f.write(f"Parameters: {param_dict}\n")
+            for i, result in enumerate(fold_results):
+                f.write(f"Fold {i+1} Results:\n")
+                f.write(f"Precision: {result['precision']:.4f}\n")
+                f.write(f"Recall: {result['recall']:.4f}\n")
+                f.write(f"F1 Score: {result['f1']:.4f}\n")
+                f.write(f"ROC-AUC Score: {result['roc_auc']:.4f}\n")
+                f.write(f"AUPRC Score: {result['auprc']:.4f}\n")
+                f.write(f"Classification Report:\n{result['report']}\n")
+                f.write(f"Confusion Matrix:\n{result['conf_matrix']}\n\n")
+            
+            avg_precision = np.mean([result['precision'] for result in fold_results])
+            avg_recall = np.mean([result['recall'] for result in fold_results])
+            avg_f1 = np.mean([result['f1'] for result in fold_results])
+            avg_roc_auc = np.mean([result['roc_auc'] for result in fold_results])
+            avg_auprc = np.mean([result['auprc'] for result in fold_results])
+            
+            f.write(f"Average Precision: {avg_precision:.4f}\n")
+            f.write(f"Average Recall: {avg_recall:.4f}\n")
+            f.write(f"Average F1 Score: {avg_f1:.4f}\n")
+            f.write(f"Average ROC-AUC Score: {avg_roc_auc:.4f}\n")
+            f.write(f"Average AUPRC Score: {avg_auprc:.4f}\n")
+            f.write("="*50 + "\n")
 
 def main():
     """Main function to run the workflow."""
@@ -167,40 +259,13 @@ def main():
     X_scaled = normalize_data(X)
     features_by_wave, wave_identifiers = group_features_by_waves(X.columns)
     X_reshaped = reshape_data(X_scaled, features_by_wave, wave_identifiers, X.columns)
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    input_dim = X_reshaped.shape[2]
 
-    kf = KFold(n_splits=KFOLDS, shuffle=True, random_state=42)
-    test_results = []
+    best_params, best_score, all_results = grid_search(X_reshaped, y, HYPERPARAMETER_GRID, KFOLDS)
+    
+    print(f"Best Parameters: {best_params}")
+    print(f"Best F1 Score: {best_score:.4f}")
 
-    for fold, (train_idx, test_idx) in enumerate(kf.split(X_reshaped)):
-        print(f'Fold {fold+1}/{KFOLDS}')
-        X_train, X_test = X_reshaped[train_idx], X_reshaped[test_idx]
-        y_train, y_test = y.values[train_idx], y.values[test_idx]
-        
-        train_loader = prepare_dataloaders(X_train, y_train, BATCH_SIZE)
-        
-        model = LSTMModel(input_dim, LSTM_UNITS, DENSE_UNITS, NUM_LAYERS, BIDIRECTIONAL, DROPOUT).to(device)
-        optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
-        
-        train_model(model, train_loader, LOSS, optimizer, MAX_EPOCHS, device)
-        
-        precision, recall, f1, roc_auc, auprc = evaluate_model(model, X_test, y_test, device)
-        test_results.append((precision, recall, f1, roc_auc, auprc))
-    
-    # Print the average results
-    avg_precision = np.mean([result[0] for result in test_results])
-    avg_recall = np.mean([result[1] for result in test_results])
-    avg_f1 = np.mean([result[2] for result in test_results])
-    avg_roc_auc = np.mean([result[3] for result in test_results])
-    avg_auprc = np.mean([result[4] for result in test_results])
-    
-    print(f'Average Precision: {avg_precision:.4f}')
-    print(f'Average Recall: {avg_recall:.4f}')
-    print(f'Average F1 Score: {avg_f1:.4f}')
-    print(f'Average ROC-AUC Score: {avg_roc_auc:.4f}')
-    print(f'Average AUPRC Score: {avg_auprc:.4f}')
-    
+    save_results_to_file(all_results, "results.txt")
+
 if __name__ == "__main__":
     main()
