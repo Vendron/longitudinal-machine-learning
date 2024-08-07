@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.utils.class_weight import compute_class_weight
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
@@ -77,13 +78,11 @@ class LSTMModel(nn.Module):
         self.lstm = nn.LSTM(input_dim, hidden_dim, n_layers, batch_first=True)
         self.dropout = nn.Dropout(0.2)
         self.fc = nn.Linear(hidden_dim, output_dim)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         h_lstm, _ = self.lstm(x)
         h_lstm = self.dropout(h_lstm[:, -1, :])
         out = self.fc(h_lstm)
-        out = self.sigmoid(out)
         return out
 
 def train_model(model, train_loader, criterion, optimizer, n_epochs):
@@ -115,13 +114,13 @@ def evaluate_model(model, test_loader):
     y_pred = np.array(y_pred)
     y_pred_binary = (y_pred > 0.5).astype(int)
     
-    precision = precision_score(y_true, y_pred_binary)
-    recall = recall_score(y_true, y_pred_binary)
-    f1 = f1_score(y_true, y_pred_binary)
+    precision = precision_score(y_true, y_pred_binary, zero_division=1)
+    recall = recall_score(y_true, y_pred_binary, zero_division=1)
+    f1 = f1_score(y_true, y_pred_binary, zero_division=1)
     roc_auc = roc_auc_score(y_true, y_pred)
-    precision, recall, thresholds = precision_recall_curve(y_true, y_pred)
-    auprc = auc(recall, precision)
-    report = classification_report(y_true, y_pred_binary)
+    precision_vals, recall_vals, thresholds = precision_recall_curve(y_true, y_pred)
+    auprc = auc(recall_vals, precision_vals)
+    report = classification_report(y_true, y_pred_binary, zero_division=1)
     conf_matrix = confusion_matrix(y_true, y_pred_binary)
 
     print(f'Test Precision: {precision:.4f}')
@@ -136,6 +135,10 @@ def main():
     """Main function to run the workflow."""
     X_train, X_test, y_train, y_test, feature_groups = load_and_prepare_data(DATASET_PATH, TARGET_WAVE)
     
+    # Compute class weights
+    class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+    
     X_train_reshaped = reshape_data_for_lstm(X_train, feature_groups)
     X_test_reshaped = reshape_data_for_lstm(X_test, feature_groups)
     
@@ -146,14 +149,15 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     
     input_dim = X_train_reshaped.shape[2]
-    hidden_dim = 50
+    hidden_dim = 128  # Increased hidden dimension
     output_dim = 1
     n_layers = 2
     n_epochs = 100
+    learning_rate = 0.0001  # Decreased learning rate
     
     model = LSTMModel(input_dim, hidden_dim, output_dim, n_layers).to(device)
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights[1])  # Use BCEWithLogitsLoss
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     train_model(model, train_loader, criterion, optimizer, n_epochs)
     evaluate_model(model, test_loader)
