@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import StandardScaler
 import torch
 from torch.nn import Module, LSTM, Dropout, Linear, Sigmoid, BCEWithLogitsLoss
@@ -33,6 +33,7 @@ VALIDATION_SPLIT = 0.1
 PATIENCE = 10
 NUM_LAYERS = 2
 TEST_SIZE = 0.1
+KFOLDS = 10
 
 print(f"Dataset: {DATASET_PATH}")
 print(f"Target class: {TARGET_WAVE}")
@@ -87,15 +88,11 @@ def reshape_data(X_scaled, features_by_wave, wave_identifiers, column_names):
     
     return X_reshaped
 
-def prepare_dataloaders(X_train, X_test, y_train, y_test, batch_size):
+def prepare_dataloaders(X_train, y_train, batch_size):
     """Prepare PyTorch DataLoader for training and testing."""
-    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32), torch.tensor(y_train.values, dtype=torch.float32))
-    test_dataset = TensorDataset(torch.tensor(X_test, dtype=torch.float32), torch.tensor(y_test.values, dtype=torch.float32))
-    
+    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32))
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    
-    return train_loader, test_loader
+    return train_loader
 
 class LSTMModel(Module):
     def __init__(self, input_dim, hidden_dim, output_dim, n_layers, bidirectional=False, dropout=0.2):
@@ -113,8 +110,8 @@ class LSTMModel(Module):
         out = self.sigmoid(out)
         return out
 
-# Training function
 def train_model(model, train_loader, criterion, optimizer, n_epochs, device):
+    """Train the LSTM model."""
     model.train()
     for epoch in range(n_epochs):
         running_loss = 0.0
@@ -128,12 +125,14 @@ def train_model(model, train_loader, criterion, optimizer, n_epochs, device):
             running_loss += loss.item() * X_batch.size(0)
         epoch_loss = running_loss / len(train_loader.dataset)
         print(f"Epoch {epoch+1}/{n_epochs}, Loss: {epoch_loss:.4f}")
-        
-# Evaluation function
-def evaluate_model(model, test_loader, device):
+
+def evaluate_model(model, X_test, y_test, device):
+    """Evaluate the LSTM model."""
     model.eval()
     y_true = []
     y_pred = []
+    test_loader = DataLoader(TensorDataset(torch.tensor(X_test, dtype=torch.float32), torch.tensor(y_test, dtype=torch.float32)), batch_size=BATCH_SIZE, shuffle=False)
+    
     with torch.no_grad():
         for X_batch, y_batch in test_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
@@ -148,7 +147,7 @@ def evaluate_model(model, test_loader, device):
     recall = recall_score(y_true, y_pred_binary)
     f1 = f1_score(y_true, y_pred_binary)
     roc_auc = roc_auc_score(y_true, y_pred)
-    precision_curve, recall_curve, thresholds = precision_recall_curve(y_true, y_pred)
+    precision_curve, recall_curve, _ = precision_recall_curve(y_true, y_pred)
     auprc = auc(recall_curve, precision_curve)
     report = classification_report(y_true, y_pred_binary)
     conf_matrix = confusion_matrix(y_true, y_pred_binary)
@@ -160,6 +159,7 @@ def evaluate_model(model, test_loader, device):
     print(f'Test AUPRC Score: {auprc:.4f}')
     print(f'Confusion Matrix:\n{conf_matrix}')
     print(f'Classification Report:\n{report}')
+    return precision, recall, f1, roc_auc, auprc
 
 def main():
     """Main function to run the workflow."""
@@ -168,17 +168,39 @@ def main():
     features_by_wave, wave_identifiers = group_features_by_waves(X.columns)
     X_reshaped = reshape_data(X_scaled, features_by_wave, wave_identifiers, X.columns)
     
-    X_train, X_test, y_train, y_test = train_test_split(X_reshaped, y, test_size=TEST_SIZE, random_state=42)
-    train_loader, test_loader = prepare_dataloaders(X_train, X_test, y_train, y_test, BATCH_SIZE)
-    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    input_dim = X_train.shape[2]
+    input_dim = X_reshaped.shape[2]
 
-    model = LSTMModel(input_dim, LSTM_UNITS, DENSE_UNITS, NUM_LAYERS, BIDIRECTIONAL, DROPOUT).to(device)
-    optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+    kf = KFold(n_splits=KFOLDS, shuffle=True, random_state=42)
+    test_results = []
 
-    train_model(model, train_loader, LOSS, optimizer, MAX_EPOCHS, device)
-    evaluate_model(model, test_loader, device)
-
+    for fold, (train_idx, test_idx) in enumerate(kf.split(X_reshaped)):
+        print(f'Fold {fold+1}/{KFOLDS}')
+        X_train, X_test = X_reshaped[train_idx], X_reshaped[test_idx]
+        y_train, y_test = y.values[train_idx], y.values[test_idx]
+        
+        train_loader = prepare_dataloaders(X_train, y_train, BATCH_SIZE)
+        
+        model = LSTMModel(input_dim, LSTM_UNITS, DENSE_UNITS, NUM_LAYERS, BIDIRECTIONAL, DROPOUT).to(device)
+        optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+        
+        train_model(model, train_loader, LOSS, optimizer, MAX_EPOCHS, device)
+        
+        precision, recall, f1, roc_auc, auprc = evaluate_model(model, X_test, y_test, device)
+        test_results.append((precision, recall, f1, roc_auc, auprc))
+    
+    # Print the average results
+    avg_precision = np.mean([result[0] for result in test_results])
+    avg_recall = np.mean([result[1] for result in test_results])
+    avg_f1 = np.mean([result[2] for result in test_results])
+    avg_roc_auc = np.mean([result[3] for result in test_results])
+    avg_auprc = np.mean([result[4] for result in test_results])
+    
+    print(f'Average Precision: {avg_precision:.4f}')
+    print(f'Average Recall: {avg_recall:.4f}')
+    print(f'Average F1 Score: {avg_f1:.4f}')
+    print(f'Average ROC-AUC Score: {avg_roc_auc:.4f}')
+    print(f'Average AUPRC Score: {avg_auprc:.4f}')
+    
 if __name__ == "__main__":
     main()
