@@ -1,3 +1,4 @@
+import pickle
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 import os
@@ -12,51 +13,38 @@ from skorch import NeuralNetBinaryClassifier
 from skorch.callbacks import EpochScoring
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import GridSearchCV
-import logging
+from sklearn.model_selection import GridSearchCV, KFold, train_test_split
+import logging 
 from functools import partial
 
-# Setup logging
+# Setup logging    
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 # Constants
-DATASET_PATH: str = os.getenv("DATASET_PATH")
-TARGET_WAVE: str = os.getenv("TARGET_WAVE")
+DATASET_PATH: str = "./data/diabetes_dataset.csv"
+TARGET_WAVE: str = os.getenv
 # Hyperparameters
 INPUT_SIZE: int = None  # Will be set after loading data 
-HIDDEN_SIZE: int = 128 # Number of neurons in each hidden layer
-OUTPUT_SIZE: int = 1 # Number of neurons in the output layer
-DROPOUT_RATE: float = 0.4 # Dropout rate for regularization (Dropout layer is applied after hidden layers to prevent overfitting by randomly setting a fraction of input units to 0)
-# Specific hyperparameters for the MLP model
-MAX_EPOCHS: int = 200 # Maximum number of epochs for training
-LR: float = 0.3 # Learning rate for optimization (Adam optimizer is used by default, however other optimizers can be used by specifying the optimizer parameter in the NeuralNetBinaryClassifier constructor)
-ITERATOR_TRAIN_SHUFFLE: bool = True # Shuffle the training data before each epoch
-TRAIN_SPLIT: None = None # Use the entire training data for training
-VERBOSE: int = 1 # Verbosity level for logging during training, where 0 = silent, 1 = progress bar, 2 = one line per epoch and 3 = one line per batch.
-CRITERION: Module = BCEWithLogitsLoss() # Binary Cross-Entropy loss function for binary classification tasks. This function combines a Sigmoid layer and the BCE loss in one single class.
-KFOLDS: int = 10 # Number of folds for cross-validation
+HIDDEN_SIZE: int = 128  # Number of neurons in each hidden layer
+OUTPUT_SIZE: int = 1  # Number of neurons in the output layer
+DROPOUT_RATE: float = 0.4  # Dropout rate for regularization
+MAX_EPOCHS: int = 200  # Maximum number of epochs for training
+LR: float = 0.3  # Learning rate for optimization
+ITERATOR_TRAIN_SHUFFLE: bool = True  # Shuffle the training data before each epoch
+TRAIN_SPLIT: None = None  # Use the entire training data for training
+VERBOSE: int = 1  # Verbosity level for logging during training
+CRITERION: Module = BCEWithLogitsLoss()  # Binary Cross-Entropy loss function
+KFOLDS: int = 10  # Number of folds for cross-validation
 
-# Set seeds for reproducibility - Note later: Issue with re-recurring confusion matrix values.  
+# Set seeds for reproducibility
 torch.manual_seed(42)
 np.random.seed(42)
 
 def preprocess_data(X: np.ndarray) -> np.ndarray:
-    """
-    Preprocess the input data by handling missing values and converting all entries to numeric types.
-    
-    This function replaces missing values (denoted by '?') with NaN, coerces all data to numeric types,
-    and fills NaN values with 0. The preprocessed data is returned as a NumPy array.
-
-    Args:
-        X (np.ndarray): The input data to be preprocessed.
-
-    Returns:
-        np.ndarray: The preprocessed data.
-    """
     X_df: pd.DataFrame = pd.DataFrame(X)
     X_df.replace('?', np.nan, inplace=True)
     X_df = X_df.apply(pd.to_numeric, errors='coerce')
@@ -64,18 +52,8 @@ def preprocess_data(X: np.ndarray) -> np.ndarray:
     return X_df.values
 
 def load_and_preprocess_data() -> tuple:
-    """
-    Load and preprocess the longitudinal dataset.
-    
-    This function loads the dataset, splits it into training and test sets, preprocesses the features,
-    and normalizes the data using Min-Max scaling. It also sets the global INPUT_SIZE variable and
-    returns the preprocessed training and test sets, target values, and feature groups.
-
-    Returns:
-        tuple: A tuple containing the preprocessed training data, test data, training targets, test targets, and feature groups.
-    """
     dataset: LongitudinalDataset = LongitudinalDataset(DATASET_PATH)
-    dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42, test_size=0.1)
+    dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42, test_size=0.1, remove_target_waves=True)
     dataset.setup_features_group("elsa")
 
     X_train: np.ndarray = preprocess_data(dataset.X_train)
@@ -95,19 +73,6 @@ def load_and_preprocess_data() -> tuple:
 
 class LongitudinalMLPModule(Module):
     def __init__(self, hidden_size: int, output_size: int, dropout_rate: float, features_group: List[List[int]]) -> None:
-        """
-        Initialize the Multi-Layer Perceptron (MLP) model designed for longitudinal data.
-        
-        This constructor initializes the model with hidden layers for each feature group and 
-        sets the dropout rate for regularization. Each feature group is processed by a separate 
-        hidden layer, and their outputs are concatenated before being passed to the final output layer.
-
-        Args:
-            hidden_size (int): The number of neurons in each hidden layer.
-            output_size (int): The number of neurons in the output layer.
-            dropout_rate (float): The dropout rate used for regularization.
-            features_group (List[List[int]]): A list of feature groups, where each group contains indices of features.
-        """
         super(LongitudinalMLPModule, self).__init__()
         self.features_group: List[List[int]] = features_group
         self.hidden_layers: ModuleList = ModuleList()
@@ -123,19 +88,6 @@ class LongitudinalMLPModule(Module):
         self.output_layer: Linear = Linear(hidden_size * len(features_group), output_size) 
 
     def forward(self, X: Tensor) -> Tensor:
-        """
-        Forward pass through the MLP model.
-        
-        The input tensor is split into groups of features, which are then processed separately by
-        corresponding hidden layers. The outputs of these layers are concatenated and passed through
-        a dropout layer before being passed to the final output layer to generate the model's predictions.
-
-        Args:
-            X (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The output tensor.
-        """
         group_outputs: List[Tensor] = []
 
         for idx, group in enumerate(self.features_group):
@@ -150,8 +102,8 @@ class LongitudinalMLPModule(Module):
         return output
 
 def create_search_space() -> dict:
-    lr_range: List[float] = [0.3, 0.5, 0.6]
-    max_epochs_range: List[int] = [200 ]
+    lr_range: List[float] = [0.001, 0.01, 0.3,]
+    max_epochs_range: List[int] = [100]
     hidden_size_range: List[int] = [32, 128]
     dropout_rate_range: List[float] = [0.3, 0.4]
 
@@ -164,82 +116,136 @@ def create_search_space() -> dict:
 
     return search_space
 
-def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray, features_group: List[List[int]]) -> None:
-    """
-    Train the MLP model and evaluate its performance on the test data.
-    
-    This function initializes the model with the specified hyperparameters, trains it on the training
-    data, and evaluates its performance on the test data by calculating various metrics such as 
-    accuracy, precision, recall, F1 score, confusion matrix, and ROC-AUC score. The results are logged
-    for further analysis.
-    
-    The hyperparameters are optimized using GridSearchCV, and the best model is selected based on the
-    accuracy score.
+def save_checkpoint(output_file: str, all_fold_results: list, current_fold: int):
+    checkpoint_data = {
+        'all_fold_results': all_fold_results,
+        'current_fold': current_fold
+    }
+    with open(output_file, 'wb') as f:
+        pickle.dump(checkpoint_data, f)
 
-    Args:
-        X_train (np.ndarray): The preprocessed training data.
-        X_test (np.ndarray): The preprocessed test data.
-        y_train (np.ndarray): The training target values.
-        y_test (np.ndarray): The test target values.
-        features_group (List[List[int]]): A list of feature groups, where each group contains indices of features.
-    """
-    model_partial: Module = partial(LongitudinalMLPModule, output_size=OUTPUT_SIZE, features_group=features_group)
-    
-    search_space: Dict = create_search_space()
-    
-    auc_callback: EpochScoring = EpochScoring(scoring='roc_auc', lower_is_better=False)
-    
-    model: NeuralNetBinaryClassifier = NeuralNetBinaryClassifier(
-        module=model_partial,
-        max_epochs=MAX_EPOCHS,
-        lr=LR,
-        iterator_train__shuffle=ITERATOR_TRAIN_SHUFFLE,
-        train_split=TRAIN_SPLIT,
-        verbose=0,  # Deactivate verbose logging for GridSearchCV
-        criterion=CRITERION,
-        callbacks=[auc_callback]
-    )
-    
-    
-    
-    search: GridSearchCV = GridSearchCV(estimator=model, param_grid=search_space, cv=KFOLDS, refit=True, scoring='roc_auc', n_jobs=-1, verbose=2)
-    
-    logger.info("Gridsearching...")
-    search.fit(X_train.astype(np.float32), y_train.astype(np.float32))
-    logger.info(f"Best score: {search.best_score_:.3f}, Best params: {search.best_params_}")
-    
-    logger.info("Starting model training...")
-    best_model: NeuralNetBinaryClassifier = search.best_estimator_
-    best_model.fit(X_train.astype(np.float32), y_train.astype(np.float32))
+def load_checkpoint(output_file: str):
+    if os.path.exists(output_file):
+        with open(output_file, 'rb') as f:
+            checkpoint_data = pickle.load(f)
+            return checkpoint_data['all_fold_results'], checkpoint_data['current_fold']
+    return [], 0
 
-    logger.info("Evaluating model...")
-    y_predictions: np.ndarray  = best_model.predict(X_test.astype(np.float32))
-    accuracy: float = np.mean(y_predictions == y_test)
-    logger.info(f'Accuracy: {accuracy:.4f}')
-
-    # Calculate additional metrics
-    precision: float = precision_score(y_test, y_predictions)
-    recall: float = recall_score(y_test, y_predictions)
-    f1: float = f1_score(y_test, y_predictions)
-    conf_matrix: np.ndarray = confusion_matrix(y_test, y_predictions)
-    roc_auc: float = roc_auc_score(y_test, y_predictions)
-
-    logger.info(f'Precision: {precision:.4f}')
-    logger.info(f'Recall: {recall:.4f}')
-    logger.info(f'F1 Score: {f1:.4f}')
-    logger.info(f'Confusion Matrix:\n{conf_matrix}')
-    logger.info(f'ROC-AUC Score: {roc_auc:.4f}')
-    logger.info(f"Model target: {TARGET_WAVE}")
+def train_and_evaluate_model(X: np.ndarray, y: np.ndarray, features_group: List[List[int]], output_file: str, checkpoint_file: str) -> None:
+    # Initialize k-fold cross-validation
+    kf = KFold(n_splits=10, shuffle=True, random_state=42)
+    all_fold_results, start_fold = load_checkpoint(checkpoint_file)
+    
+    with open(output_file, 'a') as f:
+        for fold, (train_index, test_index) in enumerate(kf.split(X), start=start_fold):
+            f.write(f'\nFold {fold + 1}\n')
+            print(f'Fold {fold + 1}')
+            
+            # Split data into training and test sets for this fold
+            X_train_fold, X_test_fold = X[train_index], X[test_index]
+            y_train_fold, y_test_fold = y[train_index], y[test_index]
+            
+            # Further split train into learning and validation sets
+            X_train_sub, X_val_sub, y_train_sub, y_val_sub = train_test_split(X_train_fold, y_train_fold, test_size=0.1, random_state=42)
+            
+            model_partial: Module = partial(LongitudinalMLPModule, output_size=OUTPUT_SIZE, features_group=features_group)
+            
+            search_space: Dict = create_search_space()
+            
+            auc_callback: EpochScoring = EpochScoring(scoring='roc_auc', lower_is_better=False)
+            
+            model: NeuralNetBinaryClassifier = NeuralNetBinaryClassifier(
+                module=model_partial,
+                max_epochs=MAX_EPOCHS,
+                lr=LR,
+                iterator_train__shuffle=ITERATOR_TRAIN_SHUFFLE,
+                train_split=TRAIN_SPLIT,
+                verbose=0,  # Deactivate verbose logging for GridSearchCV
+                criterion=CRITERION,
+                callbacks=[auc_callback]
+            )
+            
+            # Perform grid search on the learning and validation set
+            search: GridSearchCV = GridSearchCV(estimator=model, param_grid=search_space, cv=10, refit=True, scoring='roc_auc', n_jobs=-1, verbose=1)
+            logger.info(f"Gridsearching for Fold {fold + 1}...")
+            search.fit(X_train_sub.astype(np.float32), y_train_sub.astype(np.float32))
+            logger.info(f"Best score: {search.best_score_:.3f}, Best params: {search.best_params_}")
+            f.write(f"Best score: {search.best_score_:.3f}, Best params: {search.best_params_}\n")
+            
+            # Get the best model
+            best_model: NeuralNetBinaryClassifier = search.best_estimator_
+            
+            # Train on the full training set of the fold
+            logger.info(f"Training best model for Fold {fold + 1}...")
+            best_model.fit(X_train_fold.astype(np.float32), y_train_fold.astype(np.float32))
+            
+            # Evaluate on the test set of the fold
+            logger.info(f"Evaluating model for Fold {fold + 1}...")
+            y_predictions: np.ndarray  = best_model.predict(X_test_fold.astype(np.float32))
+            accuracy: float = np.mean(y_predictions == y_test_fold)
+            logger.info(f'Accuracy for Fold {fold + 1}: {accuracy:.4f}')
+            
+            # Calculate additional metrics
+            precision: float = precision_score(y_test_fold, y_predictions)
+            recall: float = recall_score(y_test_fold, y_predictions)
+            f1: float = f1_score(y_test_fold, y_predictions)
+            conf_matrix: np.ndarray = confusion_matrix(y_test_fold, y_predictions)
+            roc_auc: float = roc_auc_score(y_test_fold, y_predictions)
+            
+            logger.info(f'Precision for Fold {fold + 1}: {precision:.4f}')
+            logger.info(f'Recall for Fold {fold + 1}: {recall:.4f}')
+            logger.info(f'F1 Score for Fold {fold + 1}: {f1:.4f}')
+            logger.info(f'Confusion Matrix for Fold {fold + 1}:\n{conf_matrix}')
+            logger.info(f'ROC-AUC Score for Fold {fold + 1}: {roc_auc:.4f}')
+            
+            f.write(f'Precision for Fold {fold + 1}: {precision:.4f}\n')
+            f.write(f'Recall for Fold {fold + 1}: {recall:.4f}\n')
+            f.write(f'F1 Score for Fold {fold + 1}: {f1:.4f}\n')
+            f.write(f'Confusion Matrix for Fold {fold + 1}:\n{conf_matrix}\n')
+            f.write(f'ROC-AUC Score for Fold {fold + 1}: {roc_auc:.4f}\n')
+            
+            # Save results
+            all_fold_results.append({
+                'accuracy': accuracy,
+                'precision': precision,
+                'recall': recall,
+                'f1': f1,
+                'roc_auc': roc_auc
+            })
+            
+            # Save checkpoint after each fold
+            save_checkpoint(checkpoint_file, all_fold_results, fold + 1)
+        
+        # Find the best F1 score with its corresponding hyperparameters and recall and precision
+        best_f1 = max(all_fold_results, key=lambda x: x['f1'])
+        best_f1_idx = all_fold_results.index(best_f1)
+        best_recall = all_fold_results[best_f1_idx]['recall']
+        best_precision = all_fold_results[best_f1_idx]['precision']
+        best_f1_hyperparams = search.cv_results_['params'][best_f1_idx]
+        logger.info(f'BEST F1 SCORE: {best_f1["f1"]:.4f}, RECALL: {best_recall:.4f}, PRECISION: {best_precision:.4f}, HYPERPARAMS: {best_f1_hyperparams}')
+        f.write(f'BEST F1 SCORE: {best_f1["f1"]:.4f}, RECALL: {best_recall:.4f}, PRECISION: {best_precision:.4f}, HYPERPARAMS: {best_f1_hyperparams}\n')
+        
+        best_aoc = max(all_fold_results, key=lambda x: x['roc_auc'])
+        best_aoc_idx = all_fold_results.index(best_aoc)
+        best_aoc_hyperparams = search.cv_results_['params'][best_aoc_idx]
+        logger.info(f'BEST ROC-AUC SCORE: {best_aoc["roc_auc"]:.4f}, HYPERPARAMS: {best_aoc_hyperparams}')
+        f.write(f'BEST ROC-AUC SCORE: {best_aoc["roc_auc"]:.4f}, HYPERPARAMS: {best_aoc_hyperparams}\n')
+        
+        logger.info('All results:')
+        logger.info(all_fold_results)   
+        logger.info(f'BEST PARAMS: {search.best_params_}')
+        f.write(f'All results: {all_fold_results}\n')
+        f.write(f'BEST PARAMS: {search.best_params_}\n')
 
 def main() -> None:
-    """
-    The main function orchestrates the loading, preprocessing, training, and evaluation processes.
-    
-    This function serves as the entry point of the script, calling functions to load and preprocess
-    the data, train the MLP model, and evaluate its performance.
-    """
+    dataset_name = os.path.splitext(os.path.basename(DATASET_PATH))[0]
+    output_file = f'{dataset_name}_mlp_results.txt'
+    checkpoint_file = f'{dataset_name}_mlp_checkpoint.pkl'
+
     X_train, X_test, y_train, y_test, features_group = load_and_preprocess_data()
-    train_and_evaluate_model(X_train, X_test, y_train, y_test, features_group)
+    X_combined = np.vstack((X_train, X_test))
+    y_combined = np.hstack((y_train, y_test))
+    train_and_evaluate_model(X_combined, y_combined, features_group, output_file, checkpoint_file)
 
 if __name__ == "__main__":
     main()
