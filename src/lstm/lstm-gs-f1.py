@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -84,20 +85,23 @@ def train_validate_model(model, train_loader, val_loader, criterion, optimizer, 
             y_pred.extend(y_pred_batch.cpu().numpy())
     
     y_pred = np.array(y_pred).squeeze()
-    roc_auc = roc_auc_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred)
+    recall = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
     
     y_pred_binary = (y_pred > 0.5).astype(int)
     conf_matrix = confusion_matrix(y_true, y_pred_binary)
     
-    return roc_auc, conf_matrix
+    return f1, conf_matrix, precision, recall
 
-def grid_search(input_dim, train_data, val_data, hyperparameter_grid, device, n_epochs=10):
+def grid_search(log_file_name, input_dim, train_data, val_data, hyperparameter_grid, device, n_epochs=10):
     best_hyperparameters = None
-    best_auc = float('-inf')
+    best_f1 = float('-inf')
     best_conf_matrix = None
+    best_precision = None
+    best_recall = None
 
     for lr, dropout, n_layers, lstm_units in hyperparameter_grid:
-        print(f"Training with learning rate: {lr}, dropout: {dropout}, layers: {n_layers}, units: {lstm_units}")
         model = LSTMModel(input_dim, lstm_units, DENSE_UNITS, n_layers, BIDIRECTIONAL, dropout).to(device)
         optimizer = Adam(model.parameters(), lr=lr)
         criterion = BCEWithLogitsLoss()
@@ -105,15 +109,17 @@ def grid_search(input_dim, train_data, val_data, hyperparameter_grid, device, n_
         train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
         val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False)
         
-        auc, conf_matrix = train_validate_model(model, train_loader, val_loader, criterion, optimizer, n_epochs, device)
+        f1, conf_matrix, precision, recall = train_validate_model(model, train_loader, val_loader, criterion, optimizer, n_epochs, device)
         
-        if auc > best_auc:
-            best_auc = auc
+        if f1 > best_f1:
+            best_f1 = f1
             best_conf_matrix = conf_matrix
+            best_precision= precision
+            best_recall = recall
             best_hyperparameters = (lr, dropout, n_layers, lstm_units)
-            print(f"Found new best hyperparameters: {best_hyperparameters}")
+            log_to_file(log_file_name, f"Found new best hyperparameters: {best_hyperparameters}")
 
-    return best_hyperparameters, best_auc, best_conf_matrix
+    return best_hyperparameters, best_f1, best_conf_matrix, best_precision, best_recall
 
 def train_model(model, train_loader, criterion, optimizer, n_epochs, device):
     model.train()
@@ -170,7 +176,7 @@ def process_dataset(dataset_path, device_id):
     TARGET_NAME = os.path.basename(dataset_path).split("_")[0]
     TARGET_CLASS = "class_" + TARGET_NAME + "_w8"
     
-    log_file_name = f"lstm_{TARGET_NAME}_gs_log.txt"
+    log_file_name = f"lstm_{TARGET_NAME}_gs_f1_log.txt"
     
     log_to_file(log_file_name, f"Dataset: {dataset_path}")
     log_to_file(log_file_name, f"Target: {TARGET_NAME}")
@@ -195,9 +201,12 @@ def process_dataset(dataset_path, device_id):
     X = data_copy.drop(columns=[TARGET_CLASS])
     y = data_copy[TARGET_CLASS]
 
-    # Normalize the data
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    # Convert to PyTorch tensors and move them to GPU
+    X_tensor = torch.tensor(X.values, dtype=torch.float32).to(device)
+    y_tensor = torch.tensor(y.values, dtype=torch.float32).to(device)
+
+    # Normalize the data on the GPU
+    X_tensor = (X_tensor - X_tensor.mean(dim=0)) / X_tensor.std(dim=0)
 
     # Identify features by wave
     column_names = X.columns
@@ -210,29 +219,28 @@ def process_dataset(dataset_path, device_id):
             wave = col.split('_')[-1]
             features_by_wave[wave].append(col)
 
-    n_samples = X_scaled.shape[0]
+    n_samples = X_tensor.shape[0]
     n_timesteps = len(wave_identifiers)
     n_features_per_wave = {wave: len(features) for wave, features in features_by_wave.items()}
     max_features = max(n_features_per_wave.values())
 
-    X_reshaped = np.zeros((n_samples, n_timesteps, max_features))
+    X_reshaped = torch.zeros((n_samples, n_timesteps, max_features), device=device)
     for i, wave in enumerate(wave_identifiers):
         wave_features = features_by_wave[wave]
         indices = [column_names.get_loc(f) for f in wave_features]
-        X_reshaped[:, i, :len(indices)] = X_scaled[:, indices]
+        X_reshaped[:, i, :len(indices)] = X_tensor[:, indices]
         
     print("Shape of X_reshaped:", X_reshaped.shape)
 
-
     # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X_reshaped, y, test_size=TEST_SIZE, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X_reshaped, y_tensor, test_size=TEST_SIZE, random_state=42)
 
     # PyTorch Dataset and DataLoader
-    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32), torch.tensor(y_train.values, dtype=torch.float32))
-    test_dataset = TensorDataset(torch.tensor(X_test, dtype=torch.float32), torch.tensor(y_test.values, dtype=torch.float32))
+    train_dataset = TensorDataset(X_train, y_train)
+    test_dataset = TensorDataset(X_test, y_test)
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
     input_dim = X_train.shape[2]
     hidden_dim = LSTM_UNITS
@@ -244,10 +252,10 @@ def process_dataset(dataset_path, device_id):
     optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
 
     # Define hyperparameter grid
-    learning_rates = [0.001, 0.01]
-    dropout_rates = [0.2, 0.5]
-    n_layers_options = [1, 2]
-    lstm_units_options = [50, 100]
+    learning_rates = [0.001, 0.01, 0.0001]
+    dropout_rates = [0.2, 0.5, 0.3]
+    n_layers_options = [1, 2, 3]
+    lstm_units_options = [50, 100, 150]
 
     # All combinations of hyperparameters
     hyperparameter_grid = list(product(learning_rates, dropout_rates, n_layers_options, lstm_units_options))
@@ -256,35 +264,40 @@ def process_dataset(dataset_path, device_id):
     kf = KFold(n_splits=10, shuffle=True, random_state=42)
     best_results_per_fold = []
 
-    for fold, (train_index, test_index) in enumerate(kf.split(X_reshaped)):
+    for fold, (train_index, test_index) in enumerate(kf.split(X_reshaped.cpu().numpy())):
+        log_to_file(log_file_name, f"Fold {fold + 1} at {time.ctime()}")
+        print(f"Fold {fold + 1} at {time.ctime()}") 
         X_train_fold, X_test_fold = X_reshaped[train_index], X_reshaped[test_index]
-        y_train_fold, y_test_fold = y[train_index], y[test_index]
+        y_train_fold, y_test_fold = y_tensor[train_index], y_tensor[test_index]
         
-        X_train_sub, X_val_sub, y_train_sub, y_val_sub = train_test_split(X_train_fold, y_train_fold, test_size=VALIDATION_SPLIT, random_state=42)
+        X_train_sub, X_val_sub, y_train_sub, y_val_sub = train_test_split(X_train_fold.cpu().numpy(), y_train_fold.cpu().numpy(), test_size=VALIDATION_SPLIT, random_state=42)
+
+        X_train_sub, X_val_sub, y_train_sub, y_val_sub = torch.tensor(X_train_sub, dtype=torch.float32).to(device), torch.tensor(X_val_sub, dtype=torch.float32).to(device), torch.tensor(y_train_sub, dtype=torch.float32).to(device), torch.tensor(y_val_sub, dtype=torch.float32).to(device)
         
-        train_data_sub = TensorDataset(torch.tensor(X_train_sub, dtype=torch.float32), torch.tensor(y_train_sub.values, dtype=torch.float32))
-        val_data_sub = TensorDataset(torch.tensor(X_val_sub, dtype=torch.float32), torch.tensor(y_val_sub.values, dtype=torch.float32))
+        train_data_sub = TensorDataset(X_train_sub, y_train_sub)
+        val_data_sub = TensorDataset(X_val_sub, y_val_sub)
         
-        best_hyperparameters, best_auc, best_conf_matrix = grid_search(input_dim, train_data_sub, val_data_sub, hyperparameter_grid, device, n_epochs=MAX_EPOCHS)
+        best_hyperparameters, best_f1, best_conf_matrix, best_precision, best_recall = grid_search(log_file_name, input_dim, train_data_sub, val_data_sub, hyperparameter_grid, device, n_epochs=MAX_EPOCHS)
         
         print(f"Best Hyperparameters for Fold {fold + 1}: {best_hyperparameters}")        
         log_to_file(log_file_name, f"Best Hyperparameters for Fold {fold + 1}: {best_hyperparameters}")
         
-        best_results_per_fold.append([best_hyperparameters, best_auc, best_conf_matrix])
+        best_results_per_fold.append([best_hyperparameters, best_f1, best_conf_matrix, best_precision, best_recall])
         
         lr, dropout, n_layers, lstm_units = best_hyperparameters
         print(f"Training on full training set with best hyperparameters: {best_hyperparameters}")
         model = LSTMModel(input_dim, lstm_units, output_dim, n_layers, BIDIRECTIONAL, dropout).to(device)
         optimizer = Adam(model.parameters(), lr=lr)
         
-        train_data_final = TensorDataset(torch.tensor(X_train_fold, dtype=torch.float32), torch.tensor(y_train_fold.values, dtype=torch.float32))
-        test_data_final = TensorDataset(torch.tensor(X_test_fold, dtype=torch.float32), torch.tensor(y_test_fold.values, dtype=torch.float32))
+        train_data_final = TensorDataset(X_train_fold, y_train_fold)
+        test_data_final = TensorDataset(X_test_fold, y_test_fold)
         
-        train_loader_final = DataLoader(train_data_final, batch_size=BATCH_SIZE, shuffle=True)
-        test_loader_final = DataLoader(test_data_final, batch_size=BATCH_SIZE, shuffle=False)
+        train_loader_final = DataLoader(train_data_final, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+        test_loader_final = DataLoader(test_data_final, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
         
         train_model(model, train_loader_final, criterion, optimizer, MAX_EPOCHS, device)
         evaluate_model(model, test_loader_final, device, log_file_name)
+
 
 if __name__ == "__main__":
     dataset_paths = glob.glob(os.path.join(DATA_DIRECTORY, DATASET_PATTERN))
