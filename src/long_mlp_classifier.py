@@ -12,9 +12,7 @@ from skorch import NeuralNetBinaryClassifier
 from skorch.callbacks import EpochScoring
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score, auc, average_precision_score, roc_curve, precision_recall_curve, classification_report
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import GridSearchCV
 import logging
-from functools import partial
 from scikit_longitudinal.metrics import auprc_score
 
 # Setup logging
@@ -25,15 +23,15 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Constants
-DATASET_PATH: str = os.getenv("DATASET_PATH")
-TARGET_WAVE: str = os.getenv("TARGET_WAVE")
+DATASET_PATH: str = "../data/stroke_dataset.csv"
+TARGET_WAVE: str = "class_stroke_w8"
 # Hyperparameters
 INPUT_SIZE: int = None  # Will be set after loading data 
 HIDDEN_SIZE: int = 128 # Number of neurons in each hidden layer
 OUTPUT_SIZE: int = 1 # Number of neurons in the output layer
 DROPOUT_RATE: float = 0.4 # Dropout rate for regularization (Dropout layer is applied after hidden layers to prevent overfitting by randomly setting a fraction of input units to 0)
 # Specific hyperparameters for the MLP model
-MAX_EPOCHS: int = 200 # Maximum number of epochs for training
+MAX_EPOCHS: int = 100 # Maximum number of epochs for training
 LR: float = 0.3 # Learning rate for optimization (Adam optimizer is used by default, however other optimizers can be used by specifying the optimizer parameter in the NeuralNetBinaryClassifier constructor)
 ITERATOR_TRAIN_SHUFFLE: bool = True # Shuffle the training data before each epoch
 TRAIN_SPLIT: None = None # Use the entire training data for training
@@ -61,7 +59,7 @@ def preprocess_data(X: np.ndarray) -> np.ndarray:
     X_df: pd.DataFrame = pd.DataFrame(X)
     X_df.replace('?', np.nan, inplace=True)
     X_df = X_df.apply(pd.to_numeric, errors='coerce')
-    X_df.fillna(0, inplace=True)
+    X_df.fillna(X_df.mean(), inplace=True)
     return X_df.values
 
 def load_and_preprocess_data() -> tuple:
@@ -76,7 +74,7 @@ def load_and_preprocess_data() -> tuple:
         tuple: A tuple containing the preprocessed training data, test data, training targets, test targets, and feature groups.
     """
     dataset: LongitudinalDataset = LongitudinalDataset(DATASET_PATH)
-    dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42, test_size=0.1)
+    dataset.load_data_target_train_test_split(target_column=TARGET_WAVE, random_state=42, test_size=0.1, remove_target_waves=True)
     dataset.setup_features_group("elsa")
 
     X_train: np.ndarray = preprocess_data(dataset.X_train)
@@ -150,20 +148,6 @@ class LongitudinalMLPModule(Module):
 
         return output
 
-def create_search_space() -> dict:
-    lr_range: List[float] = [0.3, 0.5, 0.6]
-    max_epochs_range: List[int] = [200 ]
-    hidden_size_range: List[int] = [32, 128]
-    dropout_rate_range: List[float] = [0.3, 0.4]
-
-    search_space: dict = {
-        'lr': lr_range,
-        'max_epochs': max_epochs_range,
-        'module__hidden_size': hidden_size_range,
-        'module__dropout_rate': dropout_rate_range,
-    }
-
-    return search_space
 
 def train_and_evaluate_model(X_train: np.ndarray, X_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray, features_group: List[List[int]]) -> None:
     """

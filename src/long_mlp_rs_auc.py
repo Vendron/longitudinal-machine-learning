@@ -13,7 +13,7 @@ from skorch import NeuralNetBinaryClassifier
 from skorch.callbacks import EpochScoring
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import GridSearchCV, KFold, train_test_split
+from sklearn.model_selection import RandomizedSearchCV, KFold, train_test_split
 import logging 
 from functools import partial
 
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Constants
-DATASET_PATH: str = "./data/diabetes_dataset.csv"
-TARGET_WAVE: str = os.getenv
+DATASET_PATH: str = "./data/parkinsons_dataset.csv"
+TARGET_WAVE: str = "class_parkinsons_w8"
 # Hyperparameters
 INPUT_SIZE: int = None  # Will be set after loading data 
 HIDDEN_SIZE: int = 128  # Number of neurons in each hidden layer
@@ -102,7 +102,7 @@ class LongitudinalMLPModule(Module):
         return output
 
 def create_search_space() -> dict:
-    lr_range: List[float] = [0.001, 0.01, 0.3,]
+    lr_range: List[float] = [0.001, 0.01, 0.3]
     max_epochs_range: List[int] = [100]
     hidden_size_range: List[int] = [32, 128]
     dropout_rate_range: List[float] = [0.3, 0.4]
@@ -116,10 +116,12 @@ def create_search_space() -> dict:
 
     return search_space
 
-def save_checkpoint(output_file: str, all_fold_results: list, current_fold: int):
+def save_checkpoint(output_file: str, all_fold_results: list, current_fold: int, best_f1_results: Dict[str, Any], best_auc_results: Dict[str, Any]):
     checkpoint_data = {
         'all_fold_results': all_fold_results,
-        'current_fold': current_fold
+        'current_fold': current_fold,
+        'best_f1_results': best_f1_results,
+        'best_auc_results': best_auc_results
     }
     with open(output_file, 'wb') as f:
         pickle.dump(checkpoint_data, f)
@@ -128,13 +130,16 @@ def load_checkpoint(output_file: str):
     if os.path.exists(output_file):
         with open(output_file, 'rb') as f:
             checkpoint_data = pickle.load(f)
-            return checkpoint_data['all_fold_results'], checkpoint_data['current_fold']
-    return [], 0
+            return (checkpoint_data['all_fold_results'], 
+                    checkpoint_data['current_fold'],
+                    checkpoint_data['best_f1_results'],
+                    checkpoint_data['best_auc_results'])
+    return [], 0, {}, {}
 
 def train_and_evaluate_model(X: np.ndarray, y: np.ndarray, features_group: List[List[int]], output_file: str, checkpoint_file: str) -> None:
     # Initialize k-fold cross-validation
     kf = KFold(n_splits=10, shuffle=True, random_state=42)
-    all_fold_results, start_fold = load_checkpoint(checkpoint_file)
+    all_fold_results, start_fold, best_f1_results, best_auc_results = load_checkpoint(checkpoint_file)
     
     with open(output_file, 'a') as f:
         for fold, (train_index, test_index) in enumerate(kf.split(X), start=start_fold):
@@ -160,13 +165,14 @@ def train_and_evaluate_model(X: np.ndarray, y: np.ndarray, features_group: List[
                 lr=LR,
                 iterator_train__shuffle=ITERATOR_TRAIN_SHUFFLE,
                 train_split=TRAIN_SPLIT,
-                verbose=0,  # Deactivate verbose logging for GridSearchCV
+                verbose=0,  # Deactivate verbose logging for RandomizedSearchCV
                 criterion=CRITERION,
                 callbacks=[auc_callback]
             )
             
             # Perform grid search on the learning and validation set
-            search: GridSearchCV = GridSearchCV(estimator=model, param_grid=search_space, cv=10, refit=True, scoring='roc_auc', n_jobs=-1, verbose=1)
+            search: RandomizedSearchCV = RandomizedSearchCV(estimator=model, param_grid=search_space, n_iter=10, scoring='roc_auc', n_jobs=-1, cv=KFOLDS, verbose=1)
+
             logger.info(f"Gridsearching for Fold {fold + 1}...")
             search.fit(X_train_sub.astype(np.float32), y_train_sub.astype(np.float32))
             logger.info(f"Best score: {search.best_score_:.3f}, Best params: {search.best_params_}")
@@ -213,23 +219,46 @@ def train_and_evaluate_model(X: np.ndarray, y: np.ndarray, features_group: List[
                 'roc_auc': roc_auc
             })
             
+            # Check for the best F1 and AUC scores across all folds and update
+            if not best_f1_results or f1 > best_f1_results['f1']:
+                best_f1_results = {
+                    'fold': fold + 1,
+                    'f1': f1,
+                    'precision': precision,
+                    'recall': recall,
+                    'hyperparams': search.best_params_
+                }
+                
+            if not best_auc_results or roc_auc > best_auc_results['roc_auc']:
+                best_auc_results = {
+                    'fold': fold + 1,
+                    'roc_auc': roc_auc,
+                    'hyperparams': search.best_params_
+                }
+            
             # Save checkpoint after each fold
-            save_checkpoint(checkpoint_file, all_fold_results, fold + 1)
+            save_checkpoint(checkpoint_file, all_fold_results, fold + 1, best_f1_results, best_auc_results)
         
-        # Find the best F1 score with its corresponding hyperparameters and recall and precision
-        best_f1 = max(all_fold_results, key=lambda x: x['f1'])
-        best_f1_idx = all_fold_results.index(best_f1)
-        best_recall = all_fold_results[best_f1_idx]['recall']
-        best_precision = all_fold_results[best_f1_idx]['precision']
-        best_f1_hyperparams = search.cv_results_['params'][best_f1_idx]
-        logger.info(f'BEST F1 SCORE: {best_f1["f1"]:.4f}, RECALL: {best_recall:.4f}, PRECISION: {best_precision:.4f}, HYPERPARAMS: {best_f1_hyperparams}')
-        f.write(f'BEST F1 SCORE: {best_f1["f1"]:.4f}, RECALL: {best_recall:.4f}, PRECISION: {best_precision:.4f}, HYPERPARAMS: {best_f1_hyperparams}\n')
+        # Write the best results
+        logger.info(f'BEST F1 SCORE: {best_f1_results["f1"]:.4f}, '
+                    f'RECALL: {best_f1_results["recall"]:.4f}, '
+                    f'PRECISION: {best_f1_results["precision"]:.4f}, '
+                    f'HYPERPARAMS: {best_f1_results["hyperparams"]}, '
+                    f'FOLD: {best_f1_results["fold"]}')
         
-        best_aoc = max(all_fold_results, key=lambda x: x['roc_auc'])
-        best_aoc_idx = all_fold_results.index(best_aoc)
-        best_aoc_hyperparams = search.cv_results_['params'][best_aoc_idx]
-        logger.info(f'BEST ROC-AUC SCORE: {best_aoc["roc_auc"]:.4f}, HYPERPARAMS: {best_aoc_hyperparams}')
-        f.write(f'BEST ROC-AUC SCORE: {best_aoc["roc_auc"]:.4f}, HYPERPARAMS: {best_aoc_hyperparams}\n')
+        f.write(f'BEST F1 SCORE: {best_f1_results["f1"]:.4f}, '
+                f'RECALL: {best_f1_results["recall"]:.4f}, '
+                f'PRECISION: {best_f1_results["precision"]:.4f}, '
+                f'HYPERPARAMS: {best_f1_results["hyperparams"]}, '
+                f'FOLD: {best_f1_results["fold"]}\n')
+        
+        logger.info(f'BEST ROC-AUC SCORE: {best_auc_results["roc_auc"]:.4f}, '
+                    f'HYPERPARAMS: {best_auc_results["hyperparams"]}, '
+                    f'FOLD: {best_auc_results["fold"]}')
+        
+        f.write(f'BEST ROC-AUC SCORE: {best_auc_results["roc_auc"]:.4f}, '
+                f'HYPERPARAMS: {best_auc_results["hyperparams"]}, '
+                f'FOLD: {best_auc_results["fold"]}\n')
         
         logger.info('All results:')
         logger.info(all_fold_results)   
