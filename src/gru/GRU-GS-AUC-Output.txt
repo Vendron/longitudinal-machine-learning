@@ -1,0 +1,401 @@
+Fold 1
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.01, 0.2, 1, 50)
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 1: (0.01, 0.2, 1, 50)
+Training on full training set with best hyperparameters: (0.01, 0.2, 1, 50)
+Test Precision: 0.5932
+Test Recall: 0.3933
+Test F1 Score: 0.4730
+Test ROC-AUC Score: 0.8508
+Test AUPRC Score: 0.5432
+Confusion Matrix:
+[[597  24]
+ [ 54  35]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.92      0.96      0.94       621
+         1.0       0.59      0.39      0.47        89
+
+    accuracy                           0.89       710
+   macro avg       0.76      0.68      0.71       710
+weighted avg       0.88      0.89      0.88       710
+
+Fold 2
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.001, 0.2, 1, 100)
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Found new best hyperparameters: (0.01, 0.5, 1, 50)
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 2: (0.01, 0.5, 1, 50)
+Training on full training set with best hyperparameters: (0.01, 0.5, 1, 50)
+Test Precision: 0.7105
+Test Recall: 0.2700
+Test F1 Score: 0.3913
+Test ROC-AUC Score: 0.8200
+Test AUPRC Score: 0.5226
+Confusion Matrix:
+[[599  11]
+ [ 73  27]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.89      0.98      0.93       610
+         1.0       0.71      0.27      0.39       100
+
+    accuracy                           0.88       710
+   macro avg       0.80      0.63      0.66       710
+weighted avg       0.87      0.88      0.86       710
+
+Fold 3
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.01, 0.2, 1, 100)
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 3: (0.01, 0.2, 1, 100)
+Training on full training set with best hyperparameters: (0.01, 0.2, 1, 100)
+Test Precision: 0.6970
+Test Recall: 0.2170
+Test F1 Score: 0.3309
+Test ROC-AUC Score: 0.8330
+Test AUPRC Score: 0.5211
+Confusion Matrix:
+[[594  10]
+ [ 83  23]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.88      0.98      0.93       604
+         1.0       0.70      0.22      0.33       106
+
+    accuracy                           0.87       710
+   macro avg       0.79      0.60      0.63       710
+weighted avg       0.85      0.87      0.84       710
+
+Fold 4
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Found new best hyperparameters: (0.001, 0.2, 2, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.5, 1, 50)
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Found new best hyperparameters: (0.001, 0.5, 2, 50)
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 4: (0.001, 0.5, 2, 50)
+Training on full training set with best hyperparameters: (0.001, 0.5, 2, 50)
+Test Precision: 0.7097
+Test Recall: 0.2268
+Test F1 Score: 0.3438
+Test ROC-AUC Score: 0.7231
+Test AUPRC Score: 0.4542
+Confusion Matrix:
+[[604   9]
+ [ 75  22]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.89      0.99      0.93       613
+         1.0       0.71      0.23      0.34        97
+
+    accuracy                           0.88       710
+   macro avg       0.80      0.61      0.64       710
+weighted avg       0.86      0.88      0.85       710
+
+Fold 5
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.01, 0.2, 1, 50)
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.01, 0.2, 1, 100)
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 5: (0.01, 0.2, 1, 100)
+Training on full training set with best hyperparameters: (0.01, 0.2, 1, 100)
+Test Precision: 0.6552
+Test Recall: 0.2135
+Test F1 Score: 0.3220
+Test ROC-AUC Score: 0.7605
+Test AUPRC Score: 0.3941
+Confusion Matrix:
+[[611  10]
+ [ 70  19]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.90      0.98      0.94       621
+         1.0       0.66      0.21      0.32        89
+
+    accuracy                           0.89       710
+   macro avg       0.78      0.60      0.63       710
+weighted avg       0.87      0.89      0.86       710
+
+Fold 6
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.001, 0.2, 1, 100)
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 6: (0.001, 0.2, 1, 100)
+Training on full training set with best hyperparameters: (0.001, 0.2, 1, 100)
+Test Precision: 0.6552
+Test Recall: 0.1979
+Test F1 Score: 0.3040
+Test ROC-AUC Score: 0.7966
+Test AUPRC Score: 0.4592
+Confusion Matrix:
+[[604  10]
+ [ 77  19]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.89      0.98      0.93       614
+         1.0       0.66      0.20      0.30        96
+
+    accuracy                           0.88       710
+   macro avg       0.77      0.59      0.62       710
+weighted avg       0.86      0.88      0.85       710
+
+Fold 7
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.01, 0.2, 1, 50)
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 7: (0.01, 0.2, 1, 50)
+Training on full training set with best hyperparameters: (0.01, 0.2, 1, 50)
+Test Precision: 0.6250
+Test Recall: 0.3125
+Test F1 Score: 0.4167
+Test ROC-AUC Score: 0.8201
+Test AUPRC Score: 0.4967
+Confusion Matrix:
+[[596  18]
+ [ 66  30]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.90      0.97      0.93       614
+         1.0       0.62      0.31      0.42        96
+
+    accuracy                           0.88       710
+   macro avg       0.76      0.64      0.68       710
+weighted avg       0.86      0.88      0.86       710
+
+Fold 8
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.001, 0.2, 1, 100)
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Found new best hyperparameters: (0.001, 0.2, 2, 100)
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.01, 0.2, 1, 50)
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 8: (0.01, 0.2, 1, 50)
+Training on full training set with best hyperparameters: (0.01, 0.2, 1, 50)
+Test Precision: 0.7333
+Test Recall: 0.3084
+Test F1 Score: 0.4342
+Test ROC-AUC Score: 0.8042
+Test AUPRC Score: 0.5274
+Confusion Matrix:
+[[590  12]
+ [ 74  33]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.89      0.98      0.93       602
+         1.0       0.73      0.31      0.43       107
+
+    accuracy                           0.88       709
+   macro avg       0.81      0.64      0.68       709
+weighted avg       0.87      0.88      0.86       709
+
+Fold 9
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.001, 0.2, 1, 100)
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Found new best hyperparameters: (0.001, 0.5, 1, 100)
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Found new best hyperparameters: (0.001, 0.5, 2, 50)
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Found new best hyperparameters: (0.01, 0.5, 1, 100)
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 9: (0.01, 0.5, 1, 100)
+Training on full training set with best hyperparameters: (0.01, 0.5, 1, 100)
+Test Precision: 0.5000
+Test Recall: 0.1765
+Test F1 Score: 0.2609
+Test ROC-AUC Score: 0.8065
+Test AUPRC Score: 0.3841
+Confusion Matrix:
+[[609  15]
+ [ 70  15]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.90      0.98      0.93       624
+         1.0       0.50      0.18      0.26        85
+
+    accuracy                           0.88       709
+   macro avg       0.70      0.58      0.60       709
+weighted avg       0.85      0.88      0.85       709
+
+Fold 10
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.2, 1, 50)
+Training with learning rate: 0.001, dropout: 0.2, layers: 1, units: 100
+Found new best hyperparameters: (0.001, 0.2, 1, 100)
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 50
+Found new best hyperparameters: (0.001, 0.5, 1, 50)
+Training with learning rate: 0.001, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.001, dropout: 0.5, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.2, layers: 2, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 50
+Found new best hyperparameters: (0.01, 0.5, 1, 50)
+Training with learning rate: 0.01, dropout: 0.5, layers: 1, units: 100
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 50
+Training with learning rate: 0.01, dropout: 0.5, layers: 2, units: 100
+Best Hyperparameters for Fold 10: (0.01, 0.5, 1, 50)
+Training on full training set with best hyperparameters: (0.01, 0.5, 1, 50)
+Test Precision: 0.6000
+Test Recall: 0.1852
+Test F1 Score: 0.2830
+Test ROC-AUC Score: 0.8060
+Test AUPRC Score: 0.4167
+Confusion Matrix:
+[[618  10]
+ [ 66  15]]
+Classification Report:
+              precision    recall  f1-score   support
+
+         0.0       0.90      0.98      0.94       628
+         1.0       0.60      0.19      0.28        81
+
+    accuracy                           0.89       709
+   macro avg       0.75      0.58      0.61       709
+weighted avg       0.87      0.89      0.87       709
+
