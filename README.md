@@ -103,20 +103,21 @@ NOTE: Only Longitudinal features are used in this project. Static features were 
 2. **Experiment 2:** Grid search hyperparameter tuning for the best performing models from Experiment 1.
 3. **Experiment 3:** Random search hyperparameter tuning for the best performing models from Experiment 1.
 
+## Results:
 Results of each of the experiments are stored in the `results` folder. The results include the performance metrics of the models, the confusion matrices, and the hyperparameters used for each model as well as either F1, precision and recall or ROC-AUC scores.
 
 Precision and Recall scores were recorded in addition to F1 scores to better understand the performance of the models. 
 - Precision is the ratio of correctly predicted positive observations to the total predicted positives. 
 - Recall is the ratio of correctly predicted positive observations to the all observations in actual class.
 
-## File names are structured as follows:
+## Naming Convetions:
 "GS" for Grid Search and "RS" for Random Search, followed by the model name, the dataset name, and the metric used for evaluation.
 
 For example, the file name `GRU-GS-F1.csv` indicates that the file contains the results of the Grid Search hyperparameter tuning for the GRU model on the ELSA data using the F1 score as the evaluation metric.
 
 Inside you will find 10 tables, one for each dataset in the data directory. These tables show the statistics for each dataset in the data directory. These statistics can be used to compare the datasets and understand the class distribution.
 
-## Models:
+## Models Overview:
 1. **Longitudinal MLP:** A simple feedforward neural network model that uses the longitudinal features of the data.
 Model Architecture:
 ![Longitudinal MLP Model Architecture](./assets/img/long-MLP-schema.png)
@@ -125,4 +126,4 @@ Model Architecture:
 4. **GRU:** A Gated Recurrent Unit model that uses the longitudinal features of the data.
 5. **CNN:** A Convolutional Neural Network model that uses the longitudinal features of the data.
 
-> Discression: The MLP models make use of Scikit-Longitudinal. The library can be found [here](https://simonprovost.github.io/scikit-longitudinal/quick-start/#installation). Please follow the installation instructions to install the library in order to run the MLP models. - __I had to create a linux virtual environment to run the MLP models.__
+> Note: The MLP models utilize Scikit-Longitudinal. Follow the [installation instructions](https://simonprovost.github.io/scikit-longitudinal/quick-start/#installation) for setting up this library. A Linux virtual environment was required to run the MLP models.
