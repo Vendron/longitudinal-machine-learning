@@ -5,11 +5,13 @@ from sklearn.preprocessing import MinMaxScaler
 import torch
 from torch.nn import Module, LSTM, Dropout, Linear, Sigmoid, BCEWithLogitsLoss
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score, auc, precision_recall_curve, classification_report
 import os
 from dotenv import load_dotenv
 from itertools import product
+from sklearn.utils.class_weight import compute_class_weight
 
 load_dotenv()
 
@@ -32,9 +34,9 @@ DENSE_UNITS = 1
 
 # Define the hyperparameter grid for grid search
 HYPERPARAMETER_GRID = {
-    'learning_rate': [0.001, 0.005],
+    'learning_rate': [0.001, 0.01],
     'lstm_units': [50, 100],
-    'dropout': [0.3, 0.5, 0.7],
+    'dropout': [0.2, 0.5],
     'num_layers': [1, 2],
 }
 
@@ -110,9 +112,11 @@ class LSTMModel(Module):
         out = self.sigmoid(out)
         return out
 
-def train_model(model, train_loader, criterion, optimizer, n_epochs, device):
+def train_model(model, train_loader, criterion, optimizer, scheduler, n_epochs, device, early_stopping_patience=10):
     """Train the LSTM model."""
     model.train()
+    best_loss = float('inf')
+    epochs_no_improve = 0
     for epoch in range(n_epochs):
         running_loss = 0.0
         for X_batch, y_batch in train_loader:
@@ -124,7 +128,35 @@ def train_model(model, train_loader, criterion, optimizer, n_epochs, device):
             optimizer.step()
             running_loss += loss.item() * X_batch.size(0)
         epoch_loss = running_loss / len(train_loader.dataset)
-        #print(f"Epoch {epoch+1}/{n_epochs}, Loss: {epoch_loss:.4f}")
+        print(f"Epoch {epoch+1}/{n_epochs}, Loss: {epoch_loss:.4f}")
+        
+        scheduler.step(epoch_loss)
+        
+        # Early stopping
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= early_stopping_patience:
+                print("Early stopping")
+                break
+
+    # Evaluate on validation set
+    model.eval()
+    y_true, y_pred = [], []
+    
+    y_pred = np.array(y_pred).squeeze()
+    y_pred_binary = (y_pred > 0.5).astype(int)
+    
+    precision = precision_score(y_true, y_pred_binary)
+    recall = recall_score(y_true, y_pred_binary)
+    f1 = f1_score(y_true, y_pred_binary)
+    
+    conf_matrix = confusion_matrix(y_true, y_pred_binary)
+    
+    return f1, conf_matrix, recall, precision
+
 
 def evaluate_model(model, X_test, y_test, device):
     """
@@ -155,13 +187,13 @@ def evaluate_model(model, X_test, y_test, device):
     y_pred = np.array(y_pred).squeeze()
     y_pred_binary = (y_pred > 0.5).astype(int)
     
-    precision = precision_score(y_true, y_pred_binary)
-    recall = recall_score(y_true, y_pred_binary)
-    f1 = f1_score(y_true, y_pred_binary)
+    precision = precision_score(y_true, y_pred_binary, zero_division=1)
+    recall = recall_score(y_true, y_pred_binary, zero_division=1)
+    f1 = f1_score(y_true, y_pred_binary, zero_division=1)
     roc_auc = roc_auc_score(y_true, y_pred)
     precision_curve, recall_curve, _ = precision_recall_curve(y_true, y_pred)
     auprc = auc(recall_curve, precision_curve)
-    report = classification_report(y_true, y_pred_binary)
+    report = classification_report(y_true, y_pred_binary, zero_division=1)
     conf_matrix = confusion_matrix(y_true, y_pred_binary)
 
     results = {
@@ -178,7 +210,10 @@ def evaluate_model(model, X_test, y_test, device):
 
 def grid_search(X, y, param_grid, k_folds):
     """Perform grid search for hyperparameter tuning."""
-    best_score = 0
+    best_f1 = float('-inf')
+    best_conf_matrix = None
+    best_preicison = None
+    best_recall = None
     best_params = None
     all_results = []
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -210,8 +245,10 @@ def grid_search(X, y, param_grid, k_folds):
             ).to(device)
             
             optimizer = Adam(model.parameters(), lr=param_dict['learning_rate'])
+            scheduler = ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.1, verbose=True)
             
-            train_model(model, train_loader, LOSS, optimizer, MAX_EPOCHS, device)
+            # Pass the device argument to train_model
+            train_model(model, train_loader, LOSS, optimizer, scheduler, MAX_EPOCHS, device)
             
             results = evaluate_model(model, X_test, y_test, device)
             fold_results.append(results)
@@ -219,11 +256,11 @@ def grid_search(X, y, param_grid, k_folds):
         avg_score = np.mean([fold_result['f1'] for fold_result in fold_results])
         all_results.append((param_dict, fold_results))
         
-        if avg_score > best_score:
-            best_score = avg_score
+        if avg_score > best_f1:
+            best_f1 = avg_score
             best_params = param_dict
 
-    return best_params, best_score, all_results
+    return best_params, best_f1, all_results
 
 def save_results_to_file(results, filename):
     """Save the results to a file."""
