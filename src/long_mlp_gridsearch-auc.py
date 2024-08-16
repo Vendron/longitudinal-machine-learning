@@ -151,7 +151,7 @@ class LongitudinalMLPModule(Module):
 
 def create_search_space() -> dict:
     lr_range: List[float] = [0.3, 0.5, 0.6]
-    max_epochs_range: List[int] = [200 ]
+    max_epochs_range: List[int] = [100]
     hidden_size_range: List[int] = [32, 128]
     dropout_rate_range: List[float] = [0.3, 0.4]
 
